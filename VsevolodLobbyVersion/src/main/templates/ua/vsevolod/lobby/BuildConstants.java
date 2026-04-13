@@ -1,4 +1,4 @@
-package ua.vsevolod.lobby.jukeLobbyVersion;
+package ua.vsevolod.lobby;
 
 // The constants are replaced before compilation
 public class BuildConstants {
