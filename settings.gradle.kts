@@ -1,1 +1,2 @@
-rootProject.name = "JukeLobby"
+rootProject.name = "VsevolodLobby"
+include(":VsevolodLobbyVersion")

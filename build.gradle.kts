@@ -3,8 +3,8 @@ plugins {
     id("com.gradleup.shadow") version "8.3.5"
 }
 
-group = "xyz.overdyn"
-version = "1.0-SNAPSHOT"
+group = "ua.vsevolod"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
@@ -31,7 +31,7 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
     manifest {
         attributes(
-            "Main-Class" to "xyz.overdyn.bootstrap.Main"
+            "Main-Class" to "ua.vsevolod.lobby.bootstrap.Main"
         )
     }
 }
