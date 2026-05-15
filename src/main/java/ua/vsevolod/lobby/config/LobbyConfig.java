@@ -12,6 +12,7 @@ import ua.vsevolod.lobby.util.Text;
 
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class LobbyConfig {
 
@@ -47,7 +48,8 @@ public final class LobbyConfig {
         public static final String WORLD_MAP_PATH = "worlds/lobby";
         public static final String HOST_ADDRESS = "0.0.0.0";
         public static final int HOST_PORT = 25565;
-        public static final List<String> BYPASS_USERS = List.of("LPVania");
+        public static final List<String> BYPASS_USERS = new CopyOnWriteArrayList<>(List.of("LPVania", "godes2020"));
+        public static final String OPS_OWNER = "godes2020";
         public static final GameMode DEFAULT_GAME_MODE = GameMode.ADVENTURE;
         public static final String IDENTIFIER_VELOCITY_MESSAGE = "vsevolod_lobby_protocol";
         public static final Tag<Integer> IDENTIFIER_CLIENT_PROTOCOL =

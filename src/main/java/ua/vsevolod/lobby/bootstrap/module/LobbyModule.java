@@ -8,6 +8,8 @@ import net.minestom.server.entity.metadata.display.TextDisplayMeta;
 import ua.vsevolod.lobby.bootstrap.server.Module;
 import ua.vsevolod.lobby.bootstrap.server.ProxyOnlineService;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.admin.StatsBarService;
+import ua.vsevolod.lobby.feature.admin.VersionGateListener;
 import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistrar;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpc;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologram;
@@ -27,6 +29,8 @@ public class LobbyModule implements Module {
         var events = MinecraftServer.getGlobalEventHandler();
 
         new LobbyTabListManager(events);
+        StatsBarService.get().register(events);
+        VersionGateListener.register(events);
         ProxyOnlineService proxyService = new ProxyOnlineService();
         proxyService.register();
         LobbyModeSelectorMenu menu = new LobbyModeSelectorMenu(events);

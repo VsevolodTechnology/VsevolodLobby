@@ -42,7 +42,6 @@ dependencies {
     implementation("dev.lu15:spark-minestom:1.10-SNAPSHOT")
     implementation("org.mongodb:mongodb-driver-sync:5.2.1")
     implementation("org.slf4j:slf4j-simple:2.0.13")
-
 }
 
 tasks.test {
