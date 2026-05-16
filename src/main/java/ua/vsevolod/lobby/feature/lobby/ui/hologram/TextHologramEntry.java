@@ -7,18 +7,28 @@ import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityType;
 import net.minestom.server.entity.Player;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
+import net.minestom.server.entity.metadata.other.ArmorStandMeta;
 import net.minestom.server.network.packet.server.play.DestroyEntitiesPacket;
 import net.minestom.server.network.packet.server.play.EntityMetaDataPacket;
 import net.minestom.server.network.packet.server.play.EntityTeleportPacket;
 import net.minestom.server.network.packet.server.play.SpawnEntityPacket;
+import ua.vsevolod.lobby.feature.lobby.player.compat.ClientCompat;
 
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 public final class TextHologramEntry {
 
+    /** Vertical offset that aligns an armor-stand nametag with the text_display's visual origin. */
+    private static final double ARMOR_STAND_NAMETAG_OFFSET = 1.7;
+
     private final int entityId;
     private final UUID uuid;
+
+    /** Viewers whose client does not understand text_display and was given an armor_stand instead. */
+    private final Set<UUID> armorStandViewers = ConcurrentHashMap.newKeySet();
 
     private Pos position;
     public Component text;
@@ -33,19 +43,17 @@ public final class TextHologramEntry {
     }
 
     void show(Player player) {
-        player.sendPacket(new SpawnEntityPacket(
-                entityId,
-                uuid,
-                EntityType.TEXT_DISPLAY,
-                position,
-                0f,
-                0,
-                Vec.ZERO
-        ));
-        player.sendPacket(createMetadataPacket());
+        if (ClientCompat.supportsTextDisplay(player)) {
+            armorStandViewers.remove(player.getUuid());
+            sendTextDisplaySpawn(player);
+        } else {
+            armorStandViewers.add(player.getUuid());
+            sendArmorStandSpawn(player);
+        }
     }
 
     void hide(Player player) {
+        armorStandViewers.remove(player.getUuid());
         player.sendPacket(new DestroyEntitiesPacket(entityId));
     }
 
@@ -59,23 +67,56 @@ public final class TextHologramEntry {
 
     void teleportAll(Collection<Player> players, Pos newPosition) {
         this.position = newPosition;
-        EntityTeleportPacket packet = new EntityTeleportPacket(entityId, newPosition, Vec.ZERO, 0, false);
-        players.forEach(player -> player.sendPacket(packet));
+        EntityTeleportPacket textDisplayTp = new EntityTeleportPacket(entityId, newPosition, Vec.ZERO, 0, false);
+        EntityTeleportPacket armorStandTp = new EntityTeleportPacket(entityId, armorStandPos(newPosition), Vec.ZERO, 0, false);
+        for (Player player : players) {
+            player.sendPacket(armorStandViewers.contains(player.getUuid()) ? armorStandTp : textDisplayTp);
+        }
     }
 
     void updateTextAll(Collection<Player> players, Component newText) {
         this.text = newText;
-        EntityMetaDataPacket packet = createMetadataPacket();
-        players.forEach(player -> player.sendPacket(packet));
+        sendMetadataPerViewer(players);
     }
 
     void updateStyleAll(Collection<Player> players, TextHologramStyle newStyle) {
         this.style = newStyle.copy();
-        EntityMetaDataPacket packet = createMetadataPacket();
-        players.forEach(player -> player.sendPacket(packet));
+        sendMetadataPerViewer(players);
     }
 
-    private EntityMetaDataPacket createMetadataPacket() {
+    private void sendMetadataPerViewer(Collection<Player> players) {
+        EntityMetaDataPacket textDisplayPacket = null;
+        EntityMetaDataPacket armorStandPacket = null;
+        for (Player player : players) {
+            if (armorStandViewers.contains(player.getUuid())) {
+                if (armorStandPacket == null) armorStandPacket = createArmorStandMetadata();
+                player.sendPacket(armorStandPacket);
+            } else {
+                if (textDisplayPacket == null) textDisplayPacket = createTextDisplayMetadata();
+                player.sendPacket(textDisplayPacket);
+            }
+        }
+    }
+
+    private void sendTextDisplaySpawn(Player player) {
+        player.sendPacket(new SpawnEntityPacket(
+                entityId, uuid, EntityType.TEXT_DISPLAY, position, 0f, 0, Vec.ZERO
+        ));
+        player.sendPacket(createTextDisplayMetadata());
+    }
+
+    private void sendArmorStandSpawn(Player player) {
+        player.sendPacket(new SpawnEntityPacket(
+                entityId, uuid, EntityType.ARMOR_STAND, armorStandPos(position), 0f, 0, Vec.ZERO
+        ));
+        player.sendPacket(createArmorStandMetadata());
+    }
+
+    private static Pos armorStandPos(Pos textDisplayPos) {
+        return textDisplayPos.sub(0, ARMOR_STAND_NAMETAG_OFFSET, 0);
+    }
+
+    private EntityMetaDataPacket createTextDisplayMetadata() {
         Entity fake = new Entity(EntityType.TEXT_DISPLAY, uuid);
         fake.editEntityMeta(TextDisplayMeta.class, meta -> {
             meta.setText(text);
@@ -108,6 +149,19 @@ public final class TextHologramEntry {
             }
         });
 
+        return new EntityMetaDataPacket(entityId, fake.getMetadataPacket().entries());
+    }
+
+    private EntityMetaDataPacket createArmorStandMetadata() {
+        Entity fake = new Entity(EntityType.ARMOR_STAND, uuid);
+        fake.setNoGravity(true);
+        fake.setInvisible(true);
+        fake.setCustomName(text);
+        fake.setCustomNameVisible(true);
+        fake.editEntityMeta(ArmorStandMeta.class, meta -> {
+            meta.setMarker(true);
+            meta.setSmall(true);
+        });
         return new EntityMetaDataPacket(entityId, fake.getMetadataPacket().entries());
     }
 
@@ -147,4 +201,3 @@ public final class TextHologramEntry {
         return fake;
     }
 }
-
