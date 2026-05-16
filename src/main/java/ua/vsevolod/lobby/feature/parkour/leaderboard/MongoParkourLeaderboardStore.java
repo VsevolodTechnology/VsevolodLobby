@@ -57,7 +57,12 @@ public final class MongoParkourLeaderboardStore implements ParkourLeaderboardSub
     @Override
     public List<ParkourLeaderboardEntry> submitResult(ParkourRunResult result) {
         upsertBestResult(result);
-        return loadEntries();
+        // CRIT-06 fix (audit 2026-05-16): previously this followed every write with a full
+        // `loadEntries()` collection scan. The caller (ParkourLeaderboardService) now merges
+        // the new result into its existing in-memory snapshot locally; drift is corrected by
+        // the periodic `startAutoRefresh` cycle. Return value is intentionally empty — kept
+        // for the interface contract but no longer consumed.
+        return List.of();
     }
 
     @Override

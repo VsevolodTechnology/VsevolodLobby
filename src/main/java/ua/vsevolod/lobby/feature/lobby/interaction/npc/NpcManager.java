@@ -152,12 +152,25 @@ public final class NpcManager {
                 && a.visible() == b.visible();
     }
 
-    public synchronized void showTo(Player player) {
-        for (LobbyNpc npc : live.values()) npc.addViewer(player);
+    public void showTo(Player player) {
+        // Snapshot the live list under the lock — the actual addViewer calls can race with
+        // each other safely (Minestom's Entity handles its own viewer-set thread safety),
+        // and we don't want concurrent joins to serialize on this monitor. Without the
+        // snapshot+release split, every joiner waited for the previous joiner's full NPC
+        // viewer-add loop to complete. Audit HIGH-10 fix.
+        LobbyNpc[] snapshot;
+        synchronized (this) {
+            snapshot = live.values().toArray(new LobbyNpc[0]);
+        }
+        for (LobbyNpc npc : snapshot) npc.addViewer(player);
     }
 
-    public synchronized void hideFrom(Player player) {
-        for (LobbyNpc npc : live.values()) npc.removeViewer(player);
+    public void hideFrom(Player player) {
+        LobbyNpc[] snapshot;
+        synchronized (this) {
+            snapshot = live.values().toArray(new LobbyNpc[0]);
+        }
+        for (LobbyNpc npc : snapshot) npc.removeViewer(player);
     }
 
     public synchronized Optional<NpcDefinition> findById(String id) {

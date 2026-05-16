@@ -33,13 +33,15 @@ public final class ParkourLeaderboardService {
     }
 
     public synchronized void submit(ParkourRunResult result) {
-        List<ParkourLeaderboardEntry> updated;
         if (store instanceof ParkourLeaderboardSubmissionStore submissionStore) {
-            updated = submissionStore.submitResult(result);
+            // Persist the upsert but DON'T pay for a full-collection re-read. We merge the new
+            // result into our existing snapshot in-memory; the periodic auto-refresh cycle
+            // reconciles any drift with the database. Audit CRIT-06.
+            submissionStore.submitResult(result);
+            replaceEntries(merge(entries, result));
         } else {
-            updated = store.updateEntries(currentEntries -> merge(currentEntries, result));
+            replaceEntries(store.updateEntries(currentEntries -> merge(currentEntries, result)));
         }
-        replaceEntries(updated);
     }
 
     public synchronized int bestScore(UUID playerUuid) {

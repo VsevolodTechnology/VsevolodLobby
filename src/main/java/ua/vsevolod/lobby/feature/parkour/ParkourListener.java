@@ -20,6 +20,11 @@ public final class ParkourListener {
 
     public void register(EventNode<Event> node) {
         node.addListener(PlayerMoveEvent.class, event -> {
+            // Fast-path: PlayerMoveEvent is the highest-frequency event on the server. Skip the
+            // per-player session lookup when nobody is in parkour at all (the common case in
+            // a lobby with most players idle). Audit HIGH-07.
+            if (!service.hasAnySession()) return;
+
             Player player = event.getPlayer();
             ParkourSession session = service.getSession(player);
             if (session == null) {

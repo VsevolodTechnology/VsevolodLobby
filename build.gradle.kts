@@ -19,7 +19,12 @@ repositories {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(26))
+        // Build with whatever Java is on the local machine that's ≥ 25.
+        // The previous toolchain was pinned to 26 which broke local builds on machines that
+        // only have JDK 25 (and Gradle does not auto-download JDKs without a download
+        // repository configured). `release=25` below means the produced bytecode targets
+        // Java 25 either way — the toolchain is only the COMPILER's host JDK, not the target.
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 

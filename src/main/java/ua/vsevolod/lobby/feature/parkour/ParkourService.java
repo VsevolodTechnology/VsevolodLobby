@@ -6,6 +6,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
+import net.minestom.server.instance.ChunkLoader;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
 import net.minestom.server.instance.block.Block;
@@ -37,7 +38,12 @@ public final class ParkourService {
     public void start(Player player) {
         stop(player);
 
-        InstanceContainer instance = instanceManager.createInstanceContainer(DimensionType.OVERWORLD);
+        // Pass an explicit noop ChunkLoader so Minestom does not default to AnvilLoader and
+        // probe the filesystem for non-existent .mca files. Spark profile (2026-05-16) caught
+        // AnvilLoader.loadMCA at 0.30 s of FJ-pool CPU per parkour run — pure waste because
+        // this instance is generator-only.
+        InstanceContainer instance = instanceManager.createInstanceContainer(
+                DimensionType.OVERWORLD, ChunkLoader.noop());
         instance.setGenerator(unit -> {
             unit.modifier().fillHeight(0, 80, Block.AIR);
             unit.modifier().fillHeight(-64, 0, Block.BARRIER);
@@ -102,5 +108,17 @@ public final class ParkourService {
 
     public boolean isInParkour(Player player) {
         return sessions.containsKey(player.getUuid());
+    }
+
+    /**
+     * Lobby-global PlayerMoveEvent fires 5–10×/s per player (so ~2.5k–5k/s at 500 online).
+     * The listener body always early-returns when no one is in parkour — but only AFTER paying
+     * for an event-dispatch + per-player hash lookup. Expose this O(1) flag so the listener can
+     * bail in the very first instruction when the parkour sessions map is empty.
+     * Audit HIGH-07 — cheaper than the recommended EventNode scoping because that would require
+     * restructuring around the per-run InstanceContainer lifecycle.
+     */
+    public boolean hasAnySession() {
+        return !sessions.isEmpty();
     }
 }

@@ -48,9 +48,15 @@ public final class NpcSkinResolver {
     private NpcSkinResolver() {}
 
     /**
-     * Resolve {@code spec} synchronously if cached or trivially derivable.
-     * Returns {@code null} if the lookup needs network — in that case the caller should
-     * pass an {@code onResolved} callback to be notified when async resolution finishes.
+     * Resolve {@code spec} synchronously if cached or trivially derivable (raw value spec).
+     * Returns {@code null} if the lookup needs network — both URL specs AND plain usernames
+     * now take the async path so bootstrap is never blocked on Mojang. Caller passes an
+     * {@code onResolved} callback to {@link #resolveAsync} to apply the skin once it arrives.
+     *
+     * <p>Spark profile 2026-05-16 caught this method at 0.73 s of bootstrap (57 %) per
+     * username NPC because {@code PlayerSkin.fromUsername} does a synchronous HTTP GET to
+     * api.mojang.com. The fix is simply to route it through the same virtual-thread path
+     * we already use for URL specs.</p>
      */
     public static PlayerSkin resolveSync(String spec) {
         if (spec == null || spec.isBlank()) return null;
@@ -59,14 +65,8 @@ public final class NpcSkinResolver {
         if (cached != null) return cached;
 
         String s = spec.trim();
-        // url:... — must be async
-        if (s.regionMatches(true, 0, "url:", 0, 4) ||
-                s.regionMatches(true, 0, "http://", 0, 7) ||
-                s.regionMatches(true, 0, "https://", 0, 8)) {
-            return null;
-        }
 
-        // value:<base64>[;sig:<base64>]
+        // value:<base64>[;sig:<base64>] — purely local, no network needed.
         Matcher m = VALUE_SIG.matcher(s);
         if (m.matches()) {
             String value = m.group("value");
@@ -76,20 +76,13 @@ public final class NpcSkinResolver {
             return skin;
         }
 
-        // Plain username — mojang lookup; PlayerSkin.fromUsername does synchronous HTTP but
-        // Minestom caches it internally. Acceptable on startup; falls back to null on miss.
-        try {
-            PlayerSkin skin = PlayerSkin.fromUsername(s);
-            if (skin != null) CACHE.put(spec, skin);
-            return skin;
-        } catch (Exception ignored) {
-            return null;
-        }
+        // Everything else (url:..., http(s)://..., plain username) — async via resolveAsync.
+        return null;
     }
 
     /**
-     * Resolve a URL-bearing spec asynchronously. The callback runs on a virtual thread
-     * after the Mineskin request completes (or fails — then it never fires).
+     * Resolve any non-trivial spec on a virtual thread; invokes {@code onResolved} on success.
+     * On failure the callback never fires — the NPC simply keeps its default skin.
      */
     public static void resolveAsync(String spec, java.util.function.Consumer<PlayerSkin> onResolved) {
         if (spec == null || spec.isBlank()) return;
@@ -100,17 +93,33 @@ public final class NpcSkinResolver {
         }
 
         String url = extractUrl(spec);
-        if (url == null) return; // not actually a URL spec
+        if (url != null) {
+            Thread.startVirtualThread(() -> {
+                try {
+                    PlayerSkin skin = fetchFromMineskin(url);
+                    if (skin != null) {
+                        CACHE.put(spec, skin);
+                        onResolved.accept(skin);
+                    }
+                } catch (Exception e) {
+                    System.err.println("[NpcSkinResolver] Failed to fetch skin from " + url + ": " + e.getMessage());
+                }
+            });
+            return;
+        }
 
+        // Plain username — Mojang HTTP, off the tick / boot thread.
+        String username = spec.trim();
         Thread.startVirtualThread(() -> {
             try {
-                PlayerSkin skin = fetchFromMineskin(url);
+                PlayerSkin skin = PlayerSkin.fromUsername(username);
                 if (skin != null) {
                     CACHE.put(spec, skin);
                     onResolved.accept(skin);
                 }
             } catch (Exception e) {
-                System.err.println("[NpcSkinResolver] Failed to fetch skin from " + url + ": " + e.getMessage());
+                System.err.println("[NpcSkinResolver] Failed to fetch skin for username '"
+                        + username + "': " + e.getMessage());
             }
         });
     }

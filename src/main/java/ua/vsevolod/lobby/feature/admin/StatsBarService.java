@@ -11,6 +11,7 @@ import ua.vsevolod.lobby.util.Text;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class StatsBarService {
@@ -21,12 +22,16 @@ public final class StatsBarService {
         return INSTANCE;
     }
 
-    private final Map<Player, BossBar> tpsBars = new ConcurrentHashMap<>();
-    private final Map<Player, BossBar> ramBars = new ConcurrentHashMap<>();
+    // Audit MED-04: maps were keyed by Player (strong reference). If a player was kicked during
+    // configuration phase before PlayerDisconnectEvent fired (or any other rare cleanup miss)
+    // the entry pinned the Player + its network connection forever. UUID is the canonical
+    // identity used everywhere else in the codebase; the Player is resolved lazily for sends.
+    private final Map<UUID, BossBar> tpsBars = new ConcurrentHashMap<>();
+    private final Map<UUID, BossBar> ramBars = new ConcurrentHashMap<>();
 
     /** Skip-if-unchanged caches. */
-    private final Map<Player, String> lastTpsLabel = new ConcurrentHashMap<>();
-    private final Map<Player, String> lastRamLabel = new ConcurrentHashMap<>();
+    private final Map<UUID, String> lastTpsLabel = new ConcurrentHashMap<>();
+    private final Map<UUID, String> lastRamLabel = new ConcurrentHashMap<>();
 
     private volatile double lastTickMs = 50.0;
     private boolean registered = false;
@@ -43,13 +48,13 @@ public final class StatsBarService {
         );
 
         events.addListener(PlayerDisconnectEvent.class, event -> {
-            Player player = event.getPlayer();
-            BossBar t = tpsBars.remove(player);
-            if (t != null) player.hideBossBar(t);
-            BossBar r = ramBars.remove(player);
-            if (r != null) player.hideBossBar(r);
-            lastTpsLabel.remove(player);
-            lastRamLabel.remove(player);
+            UUID id = event.getPlayer().getUuid();
+            BossBar t = tpsBars.remove(id);
+            if (t != null) event.getPlayer().hideBossBar(t);
+            BossBar r = ramBars.remove(id);
+            if (r != null) event.getPlayer().hideBossBar(r);
+            lastTpsLabel.remove(id);
+            lastRamLabel.remove(id);
         });
 
         MinecraftServer.getSchedulerManager()
@@ -59,7 +64,8 @@ public final class StatsBarService {
     }
 
     public boolean toggleTps(Player player) {
-        BossBar existing = tpsBars.remove(player);
+        UUID id = player.getUuid();
+        BossBar existing = tpsBars.remove(id);
         if (existing != null) {
             player.hideBossBar(existing);
             return false;
@@ -70,13 +76,14 @@ public final class StatsBarService {
                 BossBar.Color.GREEN,
                 BossBar.Overlay.PROGRESS
         );
-        tpsBars.put(player, bar);
+        tpsBars.put(id, bar);
         player.showBossBar(bar);
         return true;
     }
 
     public boolean toggleRam(Player player) {
-        BossBar existing = ramBars.remove(player);
+        UUID id = player.getUuid();
+        BossBar existing = ramBars.remove(id);
         if (existing != null) {
             player.hideBossBar(existing);
             return false;
@@ -87,69 +94,78 @@ public final class StatsBarService {
                 BossBar.Color.BLUE,
                 BossBar.Overlay.PROGRESS
         );
-        ramBars.put(player, bar);
+        ramBars.put(id, bar);
         player.showBossBar(bar);
         return true;
     }
 
     private void tick() {
-        if (tpsBars.isEmpty() && ramBars.isEmpty()) return;
+        boolean haveTps = !tpsBars.isEmpty();
+        boolean haveRam = !ramBars.isEmpty();
+        if (!haveTps && !haveRam) return;
 
-        double mspt = lastTickMs;
-        double tps = Math.min(20.0, 1000.0 / Math.max(mspt, 0.0001));
-        float tpsProgress = (float) Math.max(0, Math.min(1, tps / 20.0));
-        BossBar.Color tpsColor =
-                tps >= 18.5 ? BossBar.Color.GREEN :
-                        tps >= 15.0 ? BossBar.Color.YELLOW :
-                                BossBar.Color.RED;
-        String tpsColorTag =
-                tps >= 18.5 ? "&a" :
-                        tps >= 15.0 ? "&e" :
-                                "&c";
+        var connectionManager = MinecraftServer.getConnectionManager();
 
-        Runtime rt = Runtime.getRuntime();
-        long usedB = rt.totalMemory() - rt.freeMemory();
-        long maxB = rt.maxMemory();
-        long usedMB = usedB / (1024L * 1024L);
-        long maxMB = maxB / (1024L * 1024L);
-        double ramRatio = (double) usedB / Math.max(maxB, 1);
-        float ramProgress = (float) Math.max(0, Math.min(1, ramRatio));
-        BossBar.Color ramColor =
-                ramRatio < 0.7 ? BossBar.Color.GREEN :
-                        ramRatio < 0.9 ? BossBar.Color.YELLOW :
-                                BossBar.Color.RED;
-        String ramColorTag =
-                ramRatio < 0.7 ? "&a" :
-                        ramRatio < 0.9 ? "&e" :
-                                "&c";
+        // Audit MED-07: TPS computation was unconditional. Now both sections are gated by the
+        // same `if (have*)` pattern — no derived values are computed unless a viewer needs them.
+        if (haveTps) {
+            double mspt = lastTickMs;
+            double tps = Math.min(20.0, 1000.0 / Math.max(mspt, 0.0001));
+            float tpsProgress = (float) Math.max(0, Math.min(1, tps / 20.0));
+            BossBar.Color tpsColor =
+                    tps >= 18.5 ? BossBar.Color.GREEN :
+                            tps >= 15.0 ? BossBar.Color.YELLOW :
+                                    BossBar.Color.RED;
+            String tpsColorTag =
+                    tps >= 18.5 ? "&a" :
+                            tps >= 15.0 ? "&e" :
+                                    "&c";
 
-        for (Map.Entry<Player, BossBar> entry : tpsBars.entrySet()) {
-            Player p = entry.getKey();
-            int ping = p.getLatency();
-            String pingTag = ping < 80 ? "&a" : ping < 200 ? "&e" : "&c";
-            String label = String.format(
-                    Locale.US,
-                    "&#FFE259ᴛᴘs: %s%.1f &7| &#FFE259ᴍsᴘᴛ: %s%.2f &7| &#FFE259ᴘɪɴɢ: %s%dᴍs",
-                    tpsColorTag, tps,
-                    tpsColorTag, mspt,
-                    pingTag, ping);
-            if (label.equals(lastTpsLabel.get(p))) continue;   // skip duplicate
-            lastTpsLabel.put(p, label);
-            BossBar bar = entry.getValue();
-            bar.name(Text.raw(label));
-            bar.progress(tpsProgress);
-            bar.color(tpsColor);
+            for (Map.Entry<UUID, BossBar> entry : tpsBars.entrySet()) {
+                Player p = connectionManager.getOnlinePlayerByUuid(entry.getKey());
+                if (p == null) continue;
+                int ping = p.getLatency();
+                String pingTag = ping < 80 ? "&a" : ping < 200 ? "&e" : "&c";
+                String label = String.format(
+                        Locale.US,
+                        "&#FFE259ᴛᴘs: %s%.1f &7| &#FFE259ᴍsᴘᴛ: %s%.2f &7| &#FFE259ᴘɪɴɢ: %s%dᴍs",
+                        tpsColorTag, tps,
+                        tpsColorTag, mspt,
+                        pingTag, ping);
+                if (label.equals(lastTpsLabel.get(entry.getKey()))) continue;
+                lastTpsLabel.put(entry.getKey(), label);
+                BossBar bar = entry.getValue();
+                bar.name(Text.raw(label));
+                bar.progress(tpsProgress);
+                bar.color(tpsColor);
+            }
         }
 
-        if (!ramBars.isEmpty()) {
+        if (haveRam) {
+            Runtime rt = Runtime.getRuntime();
+            long usedB = rt.totalMemory() - rt.freeMemory();
+            long maxB = rt.maxMemory();
+            long usedMB = usedB / (1024L * 1024L);
+            long maxMB = maxB / (1024L * 1024L);
+            double ramRatio = (double) usedB / Math.max(maxB, 1);
+            float ramProgress = (float) Math.max(0, Math.min(1, ramRatio));
+            BossBar.Color ramColor =
+                    ramRatio < 0.7 ? BossBar.Color.GREEN :
+                            ramRatio < 0.9 ? BossBar.Color.YELLOW :
+                                    BossBar.Color.RED;
+            String ramColorTag =
+                    ramRatio < 0.7 ? "&a" :
+                            ramRatio < 0.9 ? "&e" :
+                                    "&c";
+
             String ramLabel = String.format(
                     Locale.US,
                     "&#FFE259ʀᴀᴍ: %s%d ᴍʙ &7/ &f%d ᴍʙ &7(&f%.1f%%&7)",
                     ramColorTag, usedMB, maxMB, ramRatio * 100.0);
-            for (Map.Entry<Player, BossBar> entry : ramBars.entrySet()) {
-                Player p = entry.getKey();
-                if (ramLabel.equals(lastRamLabel.get(p))) continue;
-                lastRamLabel.put(p, ramLabel);
+            for (Map.Entry<UUID, BossBar> entry : ramBars.entrySet()) {
+                if (ramLabel.equals(lastRamLabel.get(entry.getKey()))) continue;
+                if (connectionManager.getOnlinePlayerByUuid(entry.getKey()) == null) continue;
+                lastRamLabel.put(entry.getKey(), ramLabel);
                 BossBar bar = entry.getValue();
                 bar.name(Text.raw(ramLabel));
                 bar.progress(ramProgress);
