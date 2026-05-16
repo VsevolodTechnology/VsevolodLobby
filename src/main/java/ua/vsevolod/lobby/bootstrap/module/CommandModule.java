@@ -1,10 +1,12 @@
 package ua.vsevolod.lobby.bootstrap.module;
 
 import ua.vsevolod.lobby.bootstrap.server.Module;
+import ua.vsevolod.lobby.bootstrap.server.ServerBootstrap;
 import ua.vsevolod.lobby.command.admin.DeopCommand;
 import ua.vsevolod.lobby.command.admin.GamemodeCommand;
 import ua.vsevolod.lobby.command.admin.OpCommand;
 import ua.vsevolod.lobby.command.admin.RamBarCommand;
+import ua.vsevolod.lobby.command.admin.ReloadCommand;
 import ua.vsevolod.lobby.command.admin.StopCommand;
 import ua.vsevolod.lobby.command.admin.TpsBarCommand;
 import ua.vsevolod.lobby.command.admin.VersionCommand;
@@ -26,6 +28,7 @@ public class CommandModule implements Module {
         new TpsBarCommand();
         new RamBarCommand();
         new VersionCommand();
+        new ReloadCommand(ServerBootstrap.CONFIG_MANAGER);
     }
 }
 

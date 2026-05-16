@@ -3,93 +3,118 @@ package ua.vsevolod.lobby.feature.lobby.ui.sidebar;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
 import net.minestom.server.scoreboard.Sidebar;
-import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.config.server.ServerInfo;
 import ua.vsevolod.lobby.config.server.ServerRegistry;
 import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class LobbySidebar {
 
+    /** Line IDs are fixed at construction; only their content reloads from config. */
+    private static final String ID_BLANK_TOP    = "blank_top";
+    private static final String ID_WELCOME      = "welcome";
+    private static final String ID_BLANK_A      = "blank_a";
+    private static final String ID_DESC         = "desc_";   // suffix with index
+    private static final String ID_BLANK_B      = "blank_b";
+    private static final String ID_MODES_HEADER = "modes_header";
+    private static final String ID_BLANK_C      = "blank_c";
+    private static final String ID_PING         = "ping";
+
     private final PerViewerSidebar sidebar;
-    private final TitleAnimation titleAnimation;
+    private final AtomicInteger animationIndex = new AtomicInteger(0);
 
     public LobbySidebar() {
         this.sidebar = new PerViewerSidebar(Text.c("&#FF9700&lOVERDYN"));
-        this.titleAnimation = new TitleAnimation();
         buildLayout();
         startAnimationTask();
+        startRefreshTask();
     }
 
     private void buildLayout() {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
         int score = 15;
 
-        line("blank_top", "", score--);
-        line("welcome", "  &7" + LobbyConfig.Lobby.WELCOME, score--);
-        line("blank_a", "", score--);
+        registerLine(ID_BLANK_TOP, "", score--);
+        registerLine(ID_WELCOME, cfg.welcomeText(), score--);
+        registerLine(ID_BLANK_A, "", score--);
 
-        line("desc_1", " &7- &#FFF2E0Скорее &eвыбирай &#FFF2E0режим", score--);
-        line("desc_2", " &7- &#FFF2E0для &bигры &#FFF2E0на сервере", score--);
-        line("desc_3", " &7- &#FFF2E0и начинай свой &#EA1B40путь", score--);
-
-        line("blank_b", "", score--);
-
-        line("modes_header", "&#FF9700↶ &#FFF2E0Режимы онлайн &#FF9700↷", score--);
-
-        List<ServerInfo> servers = ServerRegistry.LOBBY_SERVERS;
-        for (int i = 0; i < servers.size(); i++) {
-            ServerInfo server = servers.get(i);
-            line(serverLineId(server), formatServerLine(server), score--);
+        for (int i = 0; i < cfg.descriptionLines().size(); i++) {
+            registerLine(ID_DESC + i, cfg.descriptionLines().get(i), score--);
         }
 
-        line("blank_c", "", score--);
-        line("ping", "&6➜ &fВаш пинг&7: &a0", score--);
+        registerLine(ID_BLANK_B, "", score--);
+        registerLine(ID_MODES_HEADER, cfg.modesHeader(), score--);
+
+        for (ServerInfo server : ServerRegistry.LOBBY_SERVERS) {
+            registerLine(serverLineId(server), formatServerLine(server, cfg), score--);
+        }
+
+        registerLine(ID_BLANK_C, "", score--);
+        registerLine(ID_PING, cfg.pingTemplate().replace("{ping}", "0"), score--);
+    }
+
+    private void registerLine(String id, String text, int score) {
+        sidebar.createLine(new Sidebar.ScoreboardLine(id, Text.c(text), score, Sidebar.NumberFormat.blank()));
     }
 
     private void startAnimationTask() {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
         MinecraftServer.getSchedulerManager()
-                .buildTask(() -> {
-
-                    sidebar.setTitle(Text.c("&7« " + titleAnimation.nextFrame() + "&f &7»"));
-
-                    updateOnlineServers();
-                    updateAllPing();
-
-                })
-                .repeat(Duration.ofMillis(800))
+                .buildTask(this::tickAnimation)
+                .repeat(Duration.ofMillis(cfg.titleAnimationIntervalMs()))
                 .schedule();
     }
 
-    private void updateAllPing() {
-        for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-            updatePing(player);
+    private void startRefreshTask() {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        MinecraftServer.getSchedulerManager()
+                .buildTask(this::refreshAll)
+                .repeat(Duration.ofMillis(cfg.refreshIntervalMs()))
+                .schedule();
+    }
+
+    private void tickAnimation() {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        List<String> frames = cfg.titleFrames();
+        if (frames.isEmpty()) return;
+        int i = animationIndex.getAndUpdate(old -> (old + 1) % frames.size());
+        String rendered = cfg.titleFrameTemplate().replace("{frame}", frames.get(i));
+        sidebar.setTitle(Text.raw(rendered));
+    }
+
+    private void refreshAll() {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+
+        sidebar.updateLineContent(ID_WELCOME, Text.raw(cfg.welcomeText()));
+        for (int i = 0; i < cfg.descriptionLines().size(); i++) {
+            sidebar.updateLineContent(ID_DESC + i, Text.raw(cfg.descriptionLines().get(i)));
         }
-    }
+        sidebar.updateLineContent(ID_MODES_HEADER, Text.raw(cfg.modesHeader()));
 
-    private void line(String id, String text, int score) {
-        Sidebar.ScoreboardLine line = new Sidebar.ScoreboardLine(id, Text.c(text), score, Sidebar.NumberFormat.blank());
-        sidebar.createLine(line);
-    }
+        for (ServerInfo server : ServerRegistry.LOBBY_SERVERS) {
+            sidebar.updateLineContent(serverLineId(server), Text.raw(formatServerLine(server, cfg)));
+        }
 
-    private String serverLineId(ServerInfo server) {
-        return "server_" + server.id().toLowerCase();
-    }
-
-    private String formatServerLine(ServerInfo server) {
-        String onlineText = switch (server.status()) {
-            case ONLINE -> "&#EA1B40" + server.online();
-            case SOON -> "&#EA1B40" + LobbyConfig.Sections.SOON;
-            case OFFLINE -> "&#EA1B40Выключен";
-        };
-
-        return "  &7• &#FFF2E0" + server.worldName() + "&7: " + onlineText;
+        for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
+            sidebar.updateLineContent(
+                    ID_PING,
+                    Text.raw(cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()))),
+                    player
+            );
+        }
     }
 
     public void show(Player player) {
         sidebar.addViewer(player);
-        updatePing(player);
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        sidebar.updateLineContent(
+                ID_PING,
+                Text.raw(cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()))),
+                player
+        );
     }
 
     public void hide(Player player) {
@@ -97,22 +122,26 @@ public final class LobbySidebar {
     }
 
     public void updatePing(Player player) {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
         sidebar.updateLineContent(
-                "ping",
-                Text.c("&6➜ &f"+"Ваш пинг&7: &a" + player.getLatency()),
+                ID_PING,
+                Text.raw(cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()))),
                 player
         );
     }
 
-    public void updateOnlineServers() {
-        for (ServerInfo server : ServerRegistry.LOBBY_SERVERS) {
-            sidebar.updateLineContent(
-                    serverLineId(server),
-                    Text.c(formatServerLine(server))
-            );
-        }
+    private static String serverLineId(ServerInfo server) {
+        return "server_" + server.id().toLowerCase();
+    }
 
-        int online = MinecraftServer.getConnectionManager().getOnlinePlayerCount();
-        // если захочешь, можно добавить отдельную строку общего онлайна
+    private static String formatServerLine(ServerInfo server, SidebarConfig cfg) {
+        String status = switch (server.status()) {
+            case ONLINE -> cfg.statusOnline().replace("{count}", String.valueOf(server.online()));
+            case SOON -> cfg.statusSoon();
+            case OFFLINE -> cfg.statusOffline();
+        };
+        return cfg.serverLineTemplate()
+                .replace("{world}", server.worldName())
+                .replace("{status}", status);
     }
 }

@@ -7,12 +7,17 @@ import ua.vsevolod.lobby.bootstrap.module.InstanceModule;
 import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
 import ua.vsevolod.lobby.bootstrap.module.SparkModule;
 import ua.vsevolod.lobby.config.ProxyConfig;
+import ua.vsevolod.lobby.feature.admin.config.ConfigManager;
+import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarConfigSection;
+import ua.vsevolod.lobby.feature.lobby.ui.tab.TabConfigSection;
 import ua.vsevolod.lobby.integration.console.ConsoleListener;
 import ua.vsevolod.lobby.integration.console.ShutdownHook;
 
 import java.net.InetSocketAddress;
 
 public class ServerBootstrap {
+
+    public static final ConfigManager CONFIG_MANAGER = new ConfigManager();
 
     public static void bootstrap() {
         ProxyConfig proxyConfig = ProxyConfig.load();
@@ -25,6 +30,10 @@ public class ServerBootstrap {
             HandshakeOverride.install();
             System.out.println("[Bootstrap] Velocity modern forwarding ENABLED — accepting any client protocol (Via translates downstream).");
         }
+
+        CONFIG_MANAGER.register(TabConfigSection.INSTANCE);
+        CONFIG_MANAGER.register(SidebarConfigSection.INSTANCE);
+        CONFIG_MANAGER.loadAll();
 
         ShutdownHook.register();
         ConsoleListener.start();
