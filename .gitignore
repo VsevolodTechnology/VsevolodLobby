@@ -2,6 +2,11 @@
 build/
 spark/
 storage/
+proxy.properties
+via/
+viaproxy.log
+server.log
+ngrok.log
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
