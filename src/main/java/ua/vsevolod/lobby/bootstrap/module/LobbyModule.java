@@ -17,6 +17,7 @@ import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistrar;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcActionExecutor;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
+import ua.vsevolod.lobby.feature.lobby.interaction.qr.LobbyQrMapService;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.MenuManager;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologram;
@@ -37,6 +38,10 @@ public class LobbyModule implements Module {
     @Override
     public void load() {
         var events = MinecraftServer.getGlobalEventHandler();
+
+        // Render the QR map texture now, not on the first player join. ZXing + Graphics2D
+        // would otherwise run inside the LobbyJoinInitializer chain for the first joiner.
+        LobbyQrMapService.preinit();
 
         new LobbyTabListManager(events);
         StatsBarService.get().register(events);

@@ -55,15 +55,15 @@ public final class LobbyWelcomeHologramService {
     }
 
     public void refreshAll() {
-        int online = getGlobalOnline();
-
-        for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-            TextHologram hologram = activeHolograms.get(player.getUuid());
-            if (hologram == null) {
-                continue;
-            }
-
-            hologram.updateLineTextAll(Collections.singleton(player), 0, buildWelcomeComponent(player.getUsername()));
+        // Iterate the viewers we actually have holograms for, not all online players. The old
+        // loop walked the full online list and then skipped 99% of entries with `continue`;
+        // a server with 500 online and 5 with welcome holograms wasted 495 iterations per call.
+        var connectionManager = MinecraftServer.getConnectionManager();
+        for (Map.Entry<UUID, TextHologram> entry : activeHolograms.entrySet()) {
+            Player player = connectionManager.getOnlinePlayerByUuid(entry.getKey());
+            if (player == null) continue;
+            entry.getValue().updateLineTextAll(Collections.singleton(player), 0,
+                    buildWelcomeComponent(player.getUsername()));
         }
     }
 

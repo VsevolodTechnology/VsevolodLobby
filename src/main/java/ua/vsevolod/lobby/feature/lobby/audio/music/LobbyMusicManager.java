@@ -84,36 +84,39 @@ public final class LobbyMusicManager {
     private void ensureAmbientSuppressor(Player player) {
         UUID uuid = player.getUuid();
 
-        if (ambientSuppressors.containsKey(uuid)) {
-            return;
-        }
-
-        AtomicReference<Task> taskRef = new AtomicReference<>();
-        Task task = MinecraftServer.getSchedulerManager().scheduleTask(
-                () -> {
-                    if (!player.isOnline()) {
-                        Task currentTask = taskRef.get();
-                        if (currentTask != null) {
-                            currentTask.cancel();
-                            ambientSuppressors.remove(uuid, currentTask);
+        // computeIfAbsent atomicity matters: the old `containsKey` + later `put` was a TOCTOU race —
+        // two concurrent join events for the same UUID (re-login, debug spawn, …) could both pass
+        // the containsKey check and both schedule a task, but only the second was tracked in the
+        // map. The first task then ran forever on every tick with no way to cancel it. Net effect:
+        // every duplicate ensureAmbientSuppressor() call permanently leaked one scheduled task and
+        // dragged MSPT down a little more each time.
+        ambientSuppressors.computeIfAbsent(uuid, ignored -> {
+            AtomicReference<Task> taskRef = new AtomicReference<>();
+            Task task = MinecraftServer.getSchedulerManager().scheduleTask(
+                    () -> {
+                        if (!player.isOnline()) {
+                            Task currentTask = taskRef.get();
+                            if (currentTask != null) {
+                                currentTask.cancel();
+                                ambientSuppressors.remove(uuid, currentTask);
+                            }
+                            return;
                         }
-                        return;
-                    }
 
-                    // The lobby owns the audible experience, so vanilla ambient music stays muted.
-                    player.stopSound(SoundStop.source(Sound.Source.MUSIC));
+                        // The lobby owns the audible experience, so vanilla ambient music stays muted.
+                        player.stopSound(SoundStop.source(Sound.Source.MUSIC));
 
-                    if (mutedPlayers.contains(uuid)) {
-                        player.stopSound(SoundStop.source(Sound.Source.RECORD));
-                    }
-                },
-                TaskSchedule.immediate(),
-                AMBIENT_SUPPRESS_INTERVAL,
-                ExecutionType.TICK_START
-        );
-
-        taskRef.set(task);
-        ambientSuppressors.put(uuid, task);
+                        if (mutedPlayers.contains(uuid)) {
+                            player.stopSound(SoundStop.source(Sound.Source.RECORD));
+                        }
+                    },
+                    TaskSchedule.immediate(),
+                    AMBIENT_SUPPRESS_INTERVAL,
+                    ExecutionType.TICK_START
+            );
+            taskRef.set(task);
+            return task;
+        });
     }
 
     private void cancelAmbientSuppressor(UUID playerUuid) {

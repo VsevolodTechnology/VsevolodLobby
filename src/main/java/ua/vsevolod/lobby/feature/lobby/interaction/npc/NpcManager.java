@@ -30,6 +30,10 @@ public final class NpcManager {
     private final Instance instance;
     private final Map<String, LobbyNpc> live = new LinkedHashMap<>();
     private final Map<String, Team> glowTeams = new LinkedHashMap<>();
+    /** Reverse lookup live entity -> NPC id. Avoids the O(N) entry-walk in {@link #findIdByEntity}. */
+    private final Map<net.minestom.server.entity.Entity, String> entityToId = new java.util.IdentityHashMap<>();
+    /** Index of the last applied config by id. Avoids the O(N) list-scan in {@link #findById}. */
+    private Map<String, NpcDefinition> lastAppliedById = Map.of();
     private NpcsConfig lastApplied = new NpcsConfig(List.of());
 
     public NpcManager(Instance instance) {
@@ -44,11 +48,13 @@ public final class NpcManager {
         for (Map.Entry<String, LobbyNpc> entry : new ArrayList<>(live.entrySet())) {
             String id = entry.getKey();
             NpcDefinition next = incoming.get(id);
-            NpcDefinition prev = idIn(lastApplied, id);
+            NpcDefinition prev = lastAppliedById.get(id);
             boolean shouldRespawn = next == null || !next.visible() || !equivalent(prev, next);
             if (shouldRespawn) {
-                detachFromTeam(entry.getValue());
-                entry.getValue().remove();
+                LobbyNpc npc = entry.getValue();
+                detachFromTeam(npc);
+                entityToId.remove(npc);
+                npc.remove();
                 live.remove(id);
             }
         }
@@ -59,11 +65,16 @@ public final class NpcManager {
             if (!live.containsKey(def.id())) {
                 LobbyNpc npc = spawn(def);
                 live.put(def.id(), npc);
+                entityToId.put(npc, def.id());
                 applyGlowTeam(npc, def);
             }
         }
 
         lastApplied = config;
+        // Rebuild the by-id index from the new config so subsequent findById is O(1).
+        Map<String, NpcDefinition> rebuilt = new LinkedHashMap<>(incoming.size());
+        for (NpcDefinition def : config.npcs()) rebuilt.put(def.id(), def);
+        lastAppliedById = rebuilt;
     }
 
     private LobbyNpc spawn(NpcDefinition def) {
@@ -129,11 +140,6 @@ public final class NpcManager {
         }
     }
 
-    private static NpcDefinition idIn(NpcsConfig cfg, String id) {
-        for (NpcDefinition d : cfg.npcs()) if (d.id().equals(id)) return d;
-        return null;
-    }
-
     /** «Same visual entity» — if false the NPC is despawned and respawned. */
     private static boolean equivalent(NpcDefinition a, NpcDefinition b) {
         if (a == null || b == null) return false;
@@ -155,17 +161,21 @@ public final class NpcManager {
     }
 
     public synchronized Optional<NpcDefinition> findById(String id) {
-        for (NpcDefinition def : lastApplied.npcs()) {
-            if (def.id().equalsIgnoreCase(id)) return Optional.of(def);
+        NpcDefinition def = lastAppliedById.get(id);
+        if (def != null) return Optional.of(def);
+        // Case-insensitive fallback only when the fast O(1) path missed — rare, called from
+        // admin commands typed by humans rather than the hot interaction path.
+        for (Map.Entry<String, NpcDefinition> e : lastAppliedById.entrySet()) {
+            if (e.getKey().equalsIgnoreCase(id)) return Optional.of(e.getValue());
         }
         return Optional.empty();
     }
 
     public synchronized Optional<String> findIdByEntity(net.minestom.server.entity.Entity entity) {
-        for (Map.Entry<String, LobbyNpc> e : live.entrySet()) {
-            if (e.getValue().equals(entity)) return Optional.of(e.getKey());
-        }
-        return Optional.empty();
+        // Hot path: every NPC right-click / attack runs this. Previous impl walked every live
+        // NPC (O(N)). IdentityHashMap lookup is O(1) and there is exactly one entity per NPC.
+        String id = entityToId.get(entity);
+        return id == null ? Optional.empty() : Optional.of(id);
     }
 
     public synchronized List<String> allIds() {

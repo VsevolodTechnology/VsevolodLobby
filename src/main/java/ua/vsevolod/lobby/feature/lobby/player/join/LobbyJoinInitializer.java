@@ -83,6 +83,13 @@ public final class LobbyJoinInitializer {
     }
 
     private void setupState(Player player) {
+        // Order matters: setGameMode resets allowFlying to whatever the new mode permits
+        // (false for ADVENTURE/SURVIVAL — see Player#setGameMode in Minestom). Without
+        // re-asserting it here the LaunchPadManager double-jump silently stops working on
+        // parkour return, because LaunchPadManager's PlayerSpawnEvent listener fires BEFORE
+        // the setInstance().thenRun() callback that lands here.
         player.setGameMode(LobbyConfig.Settings.DEFAULT_GAME_MODE);
+        player.setAllowFlying(true);
+        player.setFlying(false);
     }
 }

@@ -6,6 +6,7 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.player.PlayerDisconnectEvent;
 import net.minestom.server.event.server.ServerTickMonitorEvent;
+import net.minestom.server.network.packet.server.play.PlayerInfoUpdatePacket;
 import net.minestom.server.network.packet.server.play.PlayerListHeaderAndFooterPacket;
 import net.minestom.server.utils.PacketSendingUtils;
 import ua.vsevolod.lobby.config.LobbyConfig;
@@ -17,7 +18,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,33 +26,28 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Tab list (player list header + footer) renderer.
+ * Tab list (player list header + footer) renderer + per-player latency icon refresher.
  *
- * <h3>Hot-path design</h3>
- * <p>The tab is the most expensive periodic broadcast in the lobby (default 100 ms tick, header
- * + footer Components per player). Two layers of caching collapse the cost from O(online) to
- * roughly O(unique-buckets):</p>
+ * <h3>Header/footer rendering</h3>
+ * <p>The {@code {ping}} placeholder is rendered per-player (each player sees their own actual
+ * latency, not a bucketed approximation). To keep the per-tick cost low, all
+ * <i>non-ping</i> substitutions ({@code {time}}, {@code {online}}, {@code {mspt}}) are done
+ * once per {@code bypass} flag — yielding two templates per tick. Per-player work is then
+ * limited to a single {@code String.replace} for {@code {ping}} and a skip-if-unchanged check
+ * against the previously rendered text.</p>
  *
- * <ol>
- *   <li><b>Bucket-keyed Component cache (per tick).</b> Players with the same
- *       {@code (bypass, pingBucket)} pair see identical text once {@code {time}} and
- *       {@code {online}} are substituted. We compute the rendered Component once per bucket
- *       per tick rather than once per player.</li>
- *   <li><b>Grouped packet send.</b> All players in a bucket get the same
- *       {@link PlayerListHeaderAndFooterPacket} — Minestom's
- *       {@link PacketSendingUtils#sendGroupedPacket} serialises it once for the whole group
- *       instead of per recipient.</li>
- *   <li><b>Per-viewer skip-if-unchanged.</b> If a player's previously rendered text equals
- *       this tick's, no packet is sent at all (cleared on disconnect).</li>
- * </ol>
- *
- * <p>Ping is bucketed at 50 ms granularity so flutter in latency doesn't churn the bucket
- * Component — values differing by a few ms hash to the same bucket.</p>
+ * <h3>Latency icon (per-player ping bars)</h3>
+ * <p>Minestom auto-broadcasts {@code UPDATE_LATENCY} only on keepalive responses
+ * (~20 s cadence), which made the TAB ping icon look frozen at the value last seen at join.
+ * We add a 2 s broadcast that batches all changed latencies into a single
+ * {@link PlayerInfoUpdatePacket} so the icon tracks reality closely without flooding the
+ * network. Unchanged latencies are skipped — packets are only sent when a player's reading
+ * actually moved.</p>
  */
 public final class LobbyTabListManager {
 
-    /** Wider bucket = fewer buckets = more grouping. 50 ms keeps the bar near-real-time. */
-    private static final int PING_BUCKET_MS = 50;
+    /** How often to push UPDATE_LATENCY broadcasts so the TAB ping bars stay fresh. */
+    private static final long LATENCY_BROADCAST_PERIOD_MS = 2_000;
 
     private final AtomicReference<Double> lastTickMs = new AtomicReference<>(50.0);
     private final AtomicReference<DateTimeFormatter> timeFormatter =
@@ -61,18 +57,33 @@ public final class LobbyTabListManager {
     /** Last text rendered for each viewer — used to skip identical packets between ticks. */
     private final Map<UUID, RenderedTab> lastRendered = new ConcurrentHashMap<>();
 
+    /** Last latency broadcast for each viewer — avoid resending an unchanged value. */
+    private final Map<UUID, Integer> lastBroadcastLatency = new ConcurrentHashMap<>();
+
     public LobbyTabListManager(GlobalEventHandler events) {
         events.addListener(ServerTickMonitorEvent.class, event ->
                 lastTickMs.set(event.getTickMonitor().getTickTime())
         );
-        events.addListener(PlayerDisconnectEvent.class, e -> lastRendered.remove(e.getPlayer().getUuid()));
+        events.addListener(PlayerDisconnectEvent.class, e -> {
+            UUID id = e.getPlayer().getUuid();
+            lastRendered.remove(id);
+            lastBroadcastLatency.remove(id);
+        });
         scheduleRefresh();
+        scheduleLatencyBroadcast();
     }
 
     private void scheduleRefresh() {
         MinecraftServer.getSchedulerManager()
                 .buildTask(this::updateAll)
                 .repeat(Duration.ofMillis(TabConfigSection.INSTANCE.current().updateIntervalMs()))
+                .schedule();
+    }
+
+    private void scheduleLatencyBroadcast() {
+        MinecraftServer.getSchedulerManager()
+                .buildTask(this::broadcastLatencies)
+                .repeat(Duration.ofMillis(LATENCY_BROADCAST_PERIOD_MS))
                 .schedule();
     }
 
@@ -85,54 +96,69 @@ public final class LobbyTabListManager {
         String time = LocalTime.now().format(formatterFor(cfg.timeFormat()));
         int online = onlinePlayers.size();
 
-        // Group players into buckets where everyone sees the same text. Per-tick cache lives
-        // only inside this method scope — small allocation, no leak risk.
-        Map<BucketKey, List<Player>> buckets = new HashMap<>();
+        // Render two templates — one with the MSPT segment populated for BYPASS users, one
+        // without — keeping {ping} unsubstituted. Per-player work below is a single replace.
+        String bypassMsptPart = cfg.msptBypassTemplate().replace("{mspt}", formattedMspt);
+        String headerBypass = renderTemplate(cfg.header(), time, online, bypassMsptPart);
+        String headerNormal = renderTemplate(cfg.header(), time, online, "");
+        String footerBypass = renderTemplate(cfg.footer(), time, online, bypassMsptPart);
+        String footerNormal = renderTemplate(cfg.footer(), time, online, "");
+
         for (Player player : onlinePlayers) {
-            buckets.computeIfAbsent(bucketFor(player), k -> new ArrayList<>(4)).add(player);
-        }
+            boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
+            String headerTpl = bypass ? headerBypass : headerNormal;
+            String footerTpl = bypass ? footerBypass : footerNormal;
 
-        for (Map.Entry<BucketKey, List<Player>> entry : buckets.entrySet()) {
-            BucketKey key = entry.getKey();
-            List<Player> members = entry.getValue();
+            String pingStr = Integer.toString(player.getLatency());
+            String headerStr = headerTpl.indexOf('{') < 0 ? headerTpl : headerTpl.replace("{ping}", pingStr);
+            String footerStr = footerTpl.indexOf('{') < 0 ? footerTpl : footerTpl.replace("{ping}", pingStr);
 
-            String msptPart = key.bypass()
-                    ? cfg.msptBypassTemplate().replace("{mspt}", formattedMspt)
-                    : "";
-            int representativePing = key.pingBucket() * PING_BUCKET_MS;
-
-            String headerStr = renderBlock(cfg.header(), representativePing, time, online, msptPart);
-            String footerStr = renderBlock(cfg.footer(), representativePing, time, online, msptPart);
-
-            sendToBucket(members, headerStr, footerStr);
-        }
-    }
-
-    private BucketKey bucketFor(Player player) {
-        boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
-        int bucket = player.getLatency() / PING_BUCKET_MS;
-        return new BucketKey(bypass, bucket);
-    }
-
-    private void sendToBucket(List<Player> members, String headerStr, String footerStr) {
-        // Filter: only members whose last-sent text differs. If everyone is up-to-date, skip
-        // the whole grouped-send.
-        List<Player> needsUpdate = null;
-        for (Player member : members) {
-            RenderedTab previous = lastRendered.get(member.getUuid());
+            RenderedTab previous = lastRendered.get(player.getUuid());
             if (previous != null && previous.header.equals(headerStr) && previous.footer.equals(footerStr)) {
                 continue;
             }
-            if (needsUpdate == null) needsUpdate = new ArrayList<>(members.size());
-            needsUpdate.add(member);
-            lastRendered.put(member.getUuid(), new RenderedTab(headerStr, footerStr));
-        }
-        if (needsUpdate == null) return;
+            lastRendered.put(player.getUuid(), new RenderedTab(headerStr, footerStr));
 
-        Component header = Text.raw(headerStr);
-        Component footer = Text.raw(footerStr);
-        PlayerListHeaderAndFooterPacket packet = new PlayerListHeaderAndFooterPacket(header, footer);
-        PacketSendingUtils.sendGroupedPacket(needsUpdate, packet);
+            Component header = Text.raw(headerStr);
+            Component footer = Text.raw(footerStr);
+            player.sendPacket(new PlayerListHeaderAndFooterPacket(header, footer));
+        }
+    }
+
+    /**
+     * Send a batched {@code UPDATE_LATENCY} for every player whose latency changed since the
+     * last broadcast. Unchanged players are omitted so we don't generate idle packet noise.
+     */
+    private void broadcastLatencies() {
+        Collection<Player> onlinePlayers = MinecraftServer.getConnectionManager().getOnlinePlayers();
+        if (onlinePlayers.isEmpty()) return;
+
+        List<PlayerInfoUpdatePacket.Entry> entries = null;
+        for (Player player : onlinePlayers) {
+            int latency = player.getLatency();
+            Integer previous = lastBroadcastLatency.get(player.getUuid());
+            if (previous != null && previous == latency) continue;
+            lastBroadcastLatency.put(player.getUuid(), latency);
+
+            // For UPDATE_LATENCY only the `latency` field is serialised — other fields are
+            // unread by clients but the record requires them, so pass benign defaults.
+            if (entries == null) entries = new ArrayList<>();
+            entries.add(new PlayerInfoUpdatePacket.Entry(
+                    player.getUuid(),
+                    player.getUsername(),
+                    List.of(),
+                    true,
+                    latency,
+                    player.getGameMode(),
+                    null,
+                    null,
+                    0,
+                    true
+            ));
+        }
+        if (entries == null) return;
+        PacketSendingUtils.broadcastPlayPacket(new PlayerInfoUpdatePacket(
+                EnumSet.of(PlayerInfoUpdatePacket.Action.UPDATE_LATENCY), entries));
     }
 
     private DateTimeFormatter formatterFor(String pattern) {
@@ -145,30 +171,25 @@ public final class LobbyTabListManager {
         return timeFormatter.get();
     }
 
-    private static String renderBlock(List<String> lines, int ping, String time, int online, String msptPart) {
+    /**
+     * Substitutes everything but {@code {ping}} (kept verbatim for the per-player pass).
+     * Lines with no placeholder are appended as-is — avoids the StringBuilder allocations
+     * inside {@code String.replace} for the (common) static lines.
+     */
+    private static String renderTemplate(List<String> lines, String time, int online, String msptPart) {
         if (lines.isEmpty()) return "";
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < lines.size(); i++) {
             if (i > 0) sb.append('\n');
-            sb.append(substitute(lines.get(i), ping, time, online, msptPart));
+            String line = lines.get(i);
+            if (line.indexOf('{') < 0) { sb.append(line); continue; }
+            sb.append(line
+                    .replace("{online}", Integer.toString(online))
+                    .replace("{time}", time)
+                    .replace("{mspt}", msptPart));
         }
         return sb.toString();
     }
 
-    private static String substitute(String line, int ping, String time, int online, String msptPart) {
-        if (line.indexOf('{') < 0) return line;
-        return line
-                .replace("{ping}", Integer.toString(ping))
-                .replace("{online}", Integer.toString(online))
-                .replace("{time}", time)
-                .replace("{mspt}", msptPart);
-        // {player} placeholder removed from bucket-grouped path — a bucket is by definition
-        // shared by multiple players. If you need per-player text, re-introduce a fast path
-        // that detects {player} in any line and falls back to the old per-player loop.
-    }
-
     private record RenderedTab(String header, String footer) {}
-
-    /** Identifies a group of players that should see identical tab text this tick. */
-    private record BucketKey(boolean bypass, int pingBucket) {}
 }

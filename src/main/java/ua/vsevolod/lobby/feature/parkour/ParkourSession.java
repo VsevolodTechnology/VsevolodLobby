@@ -32,6 +32,15 @@ public final class ParkourSession {
     private boolean finished;
     private boolean surpassedPreviousBest;
 
+    /**
+     * Last HUD frame we sent, so {@link #sendHud()} only allocates and emits an actionbar
+     * packet when the displayed text actually changes. The HUD shows score + seconds, so it
+     * naturally throttles to "one packet per score change OR per elapsed second" instead of
+     * one per movement packet (5–10/s). Prevents per-move actionbar spam.
+     */
+    private int lastHudScore = Integer.MIN_VALUE;
+    private long lastHudSecond = -1;
+
     public ParkourSession(
             Player player,
             InstanceContainer instance,
@@ -118,10 +127,13 @@ public final class ParkourSession {
     }
 
     private Point getNextTarget() {
-        if (activeBlocks.size() < 2) {
-            return null;
-        }
-        return activeBlocks.stream().skip(1).findFirst().orElse(null);
+        // Old impl: `activeBlocks.stream().skip(1).findFirst().orElse(null)` — allocated a
+        // Stream + skip pipeline + Optional on every PlayerMoveEvent during a parkour run.
+        // Iterator skip is zero-alloc.
+        if (activeBlocks.size() < 2) return null;
+        var it = activeBlocks.iterator();
+        it.next();
+        return it.next();
     }
 
     private void fail() {
@@ -163,6 +175,15 @@ public final class ParkourSession {
     }
 
     private void sendHud() {
+        // Only emit when the visible content changed — score advancement or a new whole second
+        // on the timer. Without this guard we sent an actionbar packet PER PlayerMoveEvent
+        // (5–10/s on a moving player) even though the rendered text was identical 90% of the
+        // time. Both rebuilds the Component graph and pushes a network packet.
+        long currentSecond = elapsedMillis() / 1000L;
+        if (score == lastHudScore && currentSecond == lastHudSecond) return;
+        lastHudScore = score;
+        lastHudSecond = currentSecond;
+
         Component hud = Component.text()
                 .append(Component.text("Очки ", PARKOUR_ORANGE))
                 .append(Component.text(score, LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))

@@ -8,10 +8,10 @@ import ua.vsevolod.lobby.config.server.ServerRegistry;
 import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class LobbySidebar {
@@ -28,17 +28,33 @@ public final class LobbySidebar {
     private final PerViewerSidebar sidebar;
     private final AtomicInteger animationIndex = new AtomicInteger(0);
 
-    /** Last-rendered global-line texts → skip resend if unchanged. */
-    private final Map<String, String> lastGlobalText = new HashMap<>();
+    /**
+     * Last-rendered global-line texts → skip resend if unchanged.
+     * <p>Concurrent because writes happen from both the refresh scheduler task and the player
+     * event thread (via {@link #show(Player)} → {@code buildLayout}-style line registrations) —
+     * a plain HashMap here would risk a CME under reload + join contention.
+     */
+    private final Map<String, String> lastGlobalText = new ConcurrentHashMap<>();
 
     /** Last-rendered per-player ping line. */
-    private final Map<UUID, String> lastPingText = new HashMap<>();
+    private final Map<UUID, String> lastPingText = new ConcurrentHashMap<>();
 
     /** Last rendered title frame string — skip resend if unchanged. */
     private String lastTitle = "";
 
+    /**
+     * Tracks the {@code enabled} value we last reflected to viewers — so {@link #applyEnabledState}
+     * is a no-op except on actual transitions (config reload). The previous code called
+     * {@code sidebar.addViewer(player)} every refresh tick, which (per Minestom semantics) re-sends
+     * every team-creation packet for every line — including the ping line with its <i>baseline</i>
+     * prefix ("Ping: 0"). The per-viewer ping update then skipped because the rendered text equalled
+     * the cached value, so the override never re-asserted and the client kept seeing "0".
+     */
+    private boolean lastEnabledApplied;
+
     public LobbySidebar() {
         this.sidebar = new PerViewerSidebar(Text.c("&#FF9700&lOVERDYN"));
+        this.lastEnabledApplied = SidebarConfigSection.INSTANCE.current().enabled();
         buildLayout();
         startAnimationTask();
         startRefreshTask();
@@ -120,16 +136,21 @@ public final class LobbySidebar {
         }
     }
 
-    /** Called every refresh tick — adds/removes viewers based on current enabled state. */
+    /**
+     * Transitions all online players between viewer / not-viewer state when the configured
+     * {@code enabled} flag flips (i.e. after /reload). On the steady-state path this method is
+     * a single field-compare and returns immediately — no per-player work, no resent packets,
+     * no stomping on per-viewer ping overrides.
+     */
     private void applyEnabledState(SidebarConfig cfg) {
-        if (cfg.enabled()) {
-            for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-                sidebar.addViewer(player);
-            }
+        boolean enabled = cfg.enabled();
+        if (enabled == lastEnabledApplied) return;
+        lastEnabledApplied = enabled;
+        var players = MinecraftServer.getConnectionManager().getOnlinePlayers();
+        if (enabled) {
+            for (Player player : players) sidebar.addViewer(player);
         } else {
-            for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-                sidebar.removeViewer(player);
-            }
+            for (Player player : players) sidebar.removeViewer(player);
         }
     }
 
