@@ -24,6 +24,14 @@ public final class TextHologramEntry {
     /** Vertical offset that aligns an armor-stand nametag with the text_display's visual origin. */
     private static final double ARMOR_STAND_NAMETAG_OFFSET = 1.7;
 
+    /**
+     * Players further than this from the hologram skip metadata updates.
+     * 64 blocks ≈ Minecraft's default entity render distance — anything beyond is invisible to
+     * the client anyway, so spending packet bandwidth there is wasted.
+     * Squared because we compare against distanceSquared() to avoid sqrt() in the hot path.
+     */
+    private static final double UPDATE_RANGE_SQ = 64.0 * 64.0;
+
     private final int entityId;
     private final UUID uuid;
 
@@ -88,6 +96,9 @@ public final class TextHologramEntry {
         EntityMetaDataPacket textDisplayPacket = null;
         EntityMetaDataPacket armorStandPacket = null;
         for (Player player : players) {
+            // Cull updates for players too far away — their client can't render us anyway.
+            if (player.getPosition().distanceSquared(position) > UPDATE_RANGE_SQ) continue;
+
             if (armorStandViewers.contains(player.getUuid())) {
                 if (armorStandPacket == null) armorStandPacket = createArmorStandMetadata();
                 player.sendPacket(armorStandPacket);

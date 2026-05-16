@@ -137,11 +137,10 @@ public final class ProxyOnlineService {
 
     // ===== UTILS =====
     private Player getAnyPlayer() {
-        return MinecraftServer.getConnectionManager()
-                .getOnlinePlayers()
-                .stream()
-                .findFirst()
-                .orElse(null);
+        // Avoids the stream allocation in the prior implementation. Called every 5 s by the
+        // auto-updater; the iterator-first read is O(1) and produces no garbage.
+        var iterator = MinecraftServer.getConnectionManager().getOnlinePlayers().iterator();
+        return iterator.hasNext() ? iterator.next() : null;
     }
 
     private String normalize(String serverName) {

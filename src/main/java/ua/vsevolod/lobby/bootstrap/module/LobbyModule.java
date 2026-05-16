@@ -10,6 +10,7 @@ import ua.vsevolod.lobby.bootstrap.server.ProxyOnlineService;
 import ua.vsevolod.lobby.command.admin.MenuCommand;
 import ua.vsevolod.lobby.command.admin.NpcCommand;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.admin.MsptLogger;
 import ua.vsevolod.lobby.feature.admin.StatsBarService;
 import ua.vsevolod.lobby.feature.admin.VersionGateListener;
 import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistrar;
@@ -39,6 +40,7 @@ public class LobbyModule implements Module {
 
         new LobbyTabListManager(events);
         StatsBarService.get().register(events);
+        new MsptLogger().register(events);
         VersionGateListener.register(events);
         ProxyOnlineService proxyService = new ProxyOnlineService();
         proxyService.register();

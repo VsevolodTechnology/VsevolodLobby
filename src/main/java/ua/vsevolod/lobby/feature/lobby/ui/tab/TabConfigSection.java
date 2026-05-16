@@ -42,7 +42,10 @@ public final class TabConfigSection implements ConfigSection<TabConfig> {
             #   {time}    — server local time formatted by `time-format` below
             #   {mspt}    — for BYPASS players: rendered via `mspt-bypass-template`;
             #               for others: empty string
-            #   {player}  — receiving player's username
+            #
+            # NOTE: {player} is intentionally NOT supported in the tab list — the renderer
+            # groups players with identical (bypass, ping-bucket) text into one packet send
+            # to keep MSPT low. Player names go into the player-info entries themselves.
 
             update-interval-ms: 100
             time-format: "HH:mm"
