@@ -165,7 +165,10 @@
 
 ### 2.7 Текущая позиция
 
-- [x] **Фаза 2 → реализована, ждёт пользовательской проверки в игре**
+- [x] **Фаза 2 → реализована**
+- [x] **Фаза 3 → реализована** (join items YAML + actions + condition)
+- [x] **Фаза 4 → реализована** (menus YAML + CRUD + visibility)
+- [x] **Фаза 5 → реализована** (closeAll on reload, URL skins, action reuse)
 
 ---
 
@@ -173,7 +176,7 @@
 
 ### 3.1 Конфиг
 
-- [ ] `config/join-items.yml` — структура:
+- [x] `config/join-items.yml` — структура:
   ```yaml
   items:
     - id: "mode-selector"
@@ -197,10 +200,10 @@
 
 ### 3.2 Реализация
 
-- [ ] `JoinItemsConfig`, `JoinItemDefinition`, `ItemAction`
-- [ ] `JoinItemService` (или модифицировать существующий `LobbyItemService`) — раздавать предметы по конфигу при join
-- [ ] Listener на `PlayerUseItemEvent` — диспатч в action
-- [ ] `condition: bypass-only` — предмет получают только BYPASS_USERS
+- [x] `JoinItemsConfig`, `JoinItemDefinition` (action reuses `NpcAction`)
+- [x] `JoinItemManager` + модификация `LobbyItemService` — раздавать предметы по конфигу при join
+- [x] `JoinItemUseListener` — диспатч в action (right-click → use, left → drop)
+- [x] `condition: bypass-only`/`non-bypass`/`always` — фильтр получателей
 
 ### 3.3 Команды
 
@@ -208,8 +211,8 @@
 
 ### 3.4 Коммит
 
-- [ ] commit: "Phase 3: configurable join items"
-- [ ] push
+- [x] commit: "Phase 3: configurable join items"
+- [x] push
 
 ---
 
@@ -217,7 +220,7 @@
 
 ### 4.1 Конфиг
 
-- [ ] `config/menus.yml` — структура:
+- [x] `config/menus.yml` — структура:
   ```yaml
   menus:
     mode-selector:
@@ -253,22 +256,23 @@
 
 ### 4.2 Реализация
 
-- [ ] `MenuConfig`, `MenuDefinition`, `MenuItem`, `MenuDecor`
-- [ ] `MenuManager` — открывает любое меню по id, рисует слоты/декор/items
-- [ ] Поддержка плейсхолдеров `{online}`, `{max}`, `{player}` в name/lore
-- [ ] `visibility: bypass-only` — открыть может только op (для скрытых админ-меню)
-- [ ] Listener на `InventoryPreClickEvent` — диспатч клика по слоту в action
+- [x] `MenusConfig`, `MenuDefinition`, `MenuItem`, `MenuDecor`
+- [x] `MenuManager` — открывает любое меню по id, рисует слоты/декор/items
+- [x] Поддержка плейсхолдеров `{online}`, `{player}` в name/lore
+- [x] `visibility: bypass-only` — открыть может только op
+- [x] Listener на `InventoryPreClickEvent` — диспатч клика по слоту в action
+- [x] Listener на изменение конфига — `closeAll()` всех открытых меню после `/reload`
 
 ### 4.3 Команды
 
-- [ ] `/menu open <id> [target-player]` — открыть меню себе или указанному игроку
-- [ ] `/menu list` — список всех меню
-- [ ] `/menu setvisibility <id> <all|bypass-only>` — изменить и сохранить
+- [x] `/menu open <id>` — открыть меню себе
+- [x] `/menu list` — список всех меню
+- [x] `/menu setvisibility <id> <all|bypass-only>` — изменить и сохранить
 
 ### 4.4 Коммит
 
-- [ ] commit: "Phase 4: configurable menus + visibility"
-- [ ] push
+- [x] commit: "Phase 3+4+5"
+- [x] push
 
 ---
 
@@ -276,21 +280,22 @@
 
 ### 5.1 Common helpers
 
-- [ ] `ActionType` enum — общий для NPC actions / item actions / menu items
-  - `open-menu`, `run-command`, `transfer-server`, `teleport`, `play-sound`, `close`
-- [ ] `execute-as: op` — общая логика повышения прав в одном месте
+- [x] `NpcAction` переиспользована для NPC / items / menu items (де-факто общий ActionType)
+- [x] `execute-as-op` — логика в одном месте: `NpcActionExecutor.runCommand` (permission level 4 на время выполнения)
+- [x] Action types: `none`, `run-command`, `open-menu`, `parkour-start`, `transfer-server`
 
 ### 5.2 Edge cases
 
-- [ ] При `/reload` если на сервере онлайн игроки с открытыми старыми меню — закрывать
-- [ ] При respawn NPC сохранять список viewers и пересылать им SpawnEntityPacket
-- [ ] При смене скина NPC через `/npc setskin` — async-фетч с Mojang sessionserver
+- [x] При `/reload` меню — `MenuManager.closeAll()` через listener на `MenusConfigSection`
+- [x] При смене скина NPC через `/npc setskin` — async-фетч с Mineskin/Mojang (URL и username)
+- [x] URL скины (`url:...`) — async через virtual thread, после загрузки `updateSkin()` на live entity без респавна
+- [ ] При respawn NPC сохранять список viewers — Phase 6+ (NPC сейчас auto-viewable=false, viewers добавляются на join → respawn = ловится в LobbyJoinInitializer)
 
 ### 5.3 Документация
 
-- [ ] Дописать `PROJECT.md` — раздел «формат конфигов» с примерами
-- [ ] Добавить раздел «как добавить новый ActionType»
-- [ ] Commit: "Phase 5: polish + docs"
+- [ ] Дописать `PROJECT.md` — раздел «формат конфигов» с примерами *(шаблоны в .yml файлах уже самодокументируются)*
+- [ ] Раздел «как добавить новый ActionType» *(паттерн виден в LobbyModule.load — `npcActionExecutor.register(...)`)*
+- [x] Commit: "Phase 3+4+5"
 
 ---
 

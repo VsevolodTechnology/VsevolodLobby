@@ -55,7 +55,12 @@ public final class NpcConfigSection implements ConfigSection<NpcsConfig> {
             #   name              — text floating above (Adventure legacy colour codes, &-codes & hex)
             #                       set to null to hide the name entirely
             #   description       — second line below the name (or null)
-            #   skin              — username whose skin to apply (mojang lookup) or null
+            #   skin              — null, or one of:
+            #                         * "Notch"               — mojang username lookup
+            #                         * "url:https://..."     — texture URL, signed via mineskin.org
+            #                         * "https://..."         — same as above (url: prefix optional)
+            #                         * "value:<base64>"      — pre-baked texture value
+            #                         * "value:<base64>;sig:<base64>" — full signed pair
             #   glowing           — outline glow (true/false)
             #   glow-color        — colour of the glow when glowing=true. One of the Adventure
             #                       NamedTextColor names: black, dark_blue, dark_green, dark_aqua,

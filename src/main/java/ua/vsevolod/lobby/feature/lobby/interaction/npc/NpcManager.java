@@ -3,6 +3,7 @@ package ua.vsevolod.lobby.feature.lobby.interaction.npc;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
+import net.minestom.server.entity.PlayerSkin;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.scoreboard.Team;
 import net.minestom.server.scoreboard.TeamBuilder;
@@ -66,14 +67,30 @@ public final class NpcManager {
     }
 
     private LobbyNpc spawn(NpcDefinition def) {
-        return new LobbyNpc(
+        PlayerSkin syncSkin = NpcSkinResolver.resolveSync(def.skin());
+
+        LobbyNpc npc = new LobbyNpc(
                 instance,
                 def.position().toPos(),
                 def.name() == null ? null : Text.c(def.name()),
                 def.description() == null ? null : Text.c(def.description()),
                 def.glowing(),
-                def.skin()
+                syncSkin
         );
+
+        // If the skin spec was a URL, resolveSync returned null and the resolver is now
+        // fetching it in the background. Update the live entity once the texture arrives.
+        if (syncSkin == null && def.skin() != null && !def.skin().isBlank()) {
+            String npcId = def.id();
+            NpcSkinResolver.resolveAsync(def.skin(), playerSkin -> {
+                synchronized (NpcManager.this) {
+                    LobbyNpc current = live.get(npcId);
+                    if (current != null) current.updateSkin(playerSkin);
+                }
+            });
+        }
+
+        return npc;
     }
 
     private void applyGlowTeam(LobbyNpc npc, NpcDefinition def) {

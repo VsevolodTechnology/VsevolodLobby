@@ -18,11 +18,11 @@ public final class LobbyNpc extends EntityCreature {
             Component displayName,
             Component description,
             boolean glowing,
-            String skinUsername
+            PlayerSkin skin
     ) {
         super(EntityType.MANNEQUIN);
 
-        boolean nameDisabled = displayName != null ? true : false;
+        boolean nameDisabled = displayName != null;
 
         editEntityMeta(MannequinMeta.class, meta -> {
             meta.setNotifyAboutChanges(false);
@@ -33,9 +33,8 @@ public final class LobbyNpc extends EntityCreature {
             }
             meta.setHasGlowingEffect(glowing);
 
-            ResolvableProfile profile = resolveProfile(skinUsername);
-            if (profile != null) {
-                meta.setProfile(profile);
+            if (skin != null) {
+                meta.setProfile(new ResolvableProfile(skin));
             }
 
             meta.setNotifyAboutChanges(true);
@@ -49,19 +48,15 @@ public final class LobbyNpc extends EntityCreature {
     }
 
     public LobbyNpc(Instance instance, Pos position, Component displayName, Component description) {
-        this(instance, position, displayName, description, false, null);
+        this(instance, position, displayName, description, false, (PlayerSkin) null);
     }
 
-    private ResolvableProfile resolveProfile(String skinUsername) {
-        if (skinUsername == null || skinUsername.isBlank()) {
-            return null;
-        }
-
-        try {
-            PlayerSkin skin = PlayerSkin.fromUsername(skinUsername);
-            return skin != null ? new ResolvableProfile(skin) : null;
-        } catch (Exception ignored) {
-            return null;
-        }
+    /**
+     * Replaces the skin of the live entity without respawning it. Used when an async
+     * URL skin resolve completes after the NPC was already shown to players.
+     */
+    public void updateSkin(PlayerSkin skin) {
+        if (skin == null) return;
+        editEntityMeta(MannequinMeta.class, meta -> meta.setProfile(new ResolvableProfile(skin)));
     }
 }

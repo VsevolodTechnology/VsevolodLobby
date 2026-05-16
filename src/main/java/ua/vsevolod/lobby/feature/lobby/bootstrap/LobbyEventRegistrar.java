@@ -23,14 +23,14 @@ import ua.vsevolod.lobby.feature.lobby.player.inventory.PlayerInventoryLockListe
 import ua.vsevolod.lobby.feature.lobby.player.join.LobbyItemService;
 import ua.vsevolod.lobby.feature.lobby.player.join.LobbyJoinInitializer;
 import ua.vsevolod.lobby.feature.lobby.player.join.LobbyJoinListener;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemUseListener;
 import ua.vsevolod.lobby.feature.lobby.player.login.LobbyPlayerLoginListener;
 import ua.vsevolod.lobby.feature.lobby.player.protocol.LobbyProtocolWarningService;
 import ua.vsevolod.lobby.feature.lobby.player.visibility.PlayerHider;
 import ua.vsevolod.lobby.feature.lobby.player.workaround.MinestomTagsWorkaround;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.LobbyWelcomeHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.ParkourLeaderboardHologramService;
-import ua.vsevolod.lobby.feature.lobby.ui.menu.LobbyModeMenuItemListener;
-import ua.vsevolod.lobby.feature.lobby.ui.menu.LobbyModeSelectorMenu;
+import ua.vsevolod.lobby.feature.lobby.ui.menu.LobbyModeSelectorMenu; // kept for the lobbyMenu param even though it's no longer wired directly here (compass click now routes through NpcActionExecutor's open-menu handler registered in LobbyModule).
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.LobbySidebar;
 import ua.vsevolod.lobby.feature.lobby.world.movement.LaunchPadManager;
 import ua.vsevolod.lobby.feature.lobby.world.protection.LobbyBlockProtectionListener;
@@ -108,7 +108,7 @@ public final class LobbyEventRegistrar {
                 new LobbyBlockProtectionListener(),
                 new LobbyJoinListener(joinInitializer),
                 new LobbyNpcInteractionListener(npcManager, npcActionExecutor),
-                new LobbyModeMenuItemListener(lobbyMenu),
+                new JoinItemUseListener(npcActionExecutor),
                 new LobbyQrListener(),
                 new LobbyMusicPlayerListener(musicManager),
                 new PlayerInventoryLockListener()

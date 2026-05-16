@@ -9,6 +9,8 @@ import ua.vsevolod.lobby.bootstrap.module.SparkModule;
 import ua.vsevolod.lobby.config.ProxyConfig;
 import ua.vsevolod.lobby.feature.admin.config.ConfigManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfigSection;
+import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.tab.TabConfigSection;
 import ua.vsevolod.lobby.integration.console.ConsoleListener;
@@ -40,6 +42,8 @@ public class ServerBootstrap {
         CONFIG_MANAGER.register(TabConfigSection.INSTANCE);
         CONFIG_MANAGER.register(SidebarConfigSection.INSTANCE);
         CONFIG_MANAGER.register(NpcConfigSection.INSTANCE);
+        CONFIG_MANAGER.register(JoinItemsConfigSection.INSTANCE);
+        CONFIG_MANAGER.register(MenusConfigSection.INSTANCE);
         CONFIG_MANAGER.loadAll();
 
         ShutdownHook.register();

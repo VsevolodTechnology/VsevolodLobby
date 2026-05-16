@@ -7,6 +7,7 @@ import net.minestom.server.entity.metadata.display.AbstractDisplayMeta;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
 import ua.vsevolod.lobby.bootstrap.server.Module;
 import ua.vsevolod.lobby.bootstrap.server.ProxyOnlineService;
+import ua.vsevolod.lobby.command.admin.MenuCommand;
 import ua.vsevolod.lobby.command.admin.NpcCommand;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.admin.StatsBarService;
@@ -15,6 +16,8 @@ import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistrar;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcActionExecutor;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
+import ua.vsevolod.lobby.feature.lobby.ui.menu.MenuManager;
+import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologram;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologramBuilder;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologramStyle;
@@ -28,6 +31,7 @@ public class LobbyModule implements Module {
     public static TextHologram holo;
     public static NpcManager npcManager;
     public static NpcActionExecutor npcActionExecutor;
+    public static MenuManager menuManager;
 
     @Override
     public void load() {
@@ -45,7 +49,24 @@ public class LobbyModule implements Module {
         // The action executor knows how to dispatch open-menu / parkour-start with live service refs;
         // the manager owns the entities and reacts to /reload via the config-section listener.
         npcActionExecutor = new NpcActionExecutor();
-        npcActionExecutor.registerSimple("open-menu", player -> player.openInventory(menu.getMenu()));
+        menuManager = new MenuManager(npcActionExecutor);
+        menuManager.register(events);
+        // On /reload, close all open menus so viewers don't see stale items.
+        MenusConfigSection.INSTANCE.addListener(cfg -> menuManager.closeAll());
+
+        // `open-menu <id>` action: try the config-driven MenuManager first; fall back to the
+        // legacy hardcoded mode-selector for backwards compatibility.
+        npcActionExecutor.register("open-menu", (player, action) -> {
+            if (!menuManager.openFor(player, action.target())) {
+                if ("mode-selector".equals(action.target())) {
+                    player.openInventory(menu.getMenu());
+                }
+            }
+        });
+        // `transfer-server` stub — Phase 4. Real cross-backend transfer arrives later together
+        // with Velocity plugin-channel wiring; for now we just chat the destination at the player.
+        npcActionExecutor.register("transfer-server", (player, action) ->
+                player.sendMessage("§7Подключение к §f" + action.target() + "§7... (transfer не реализован)"));
         // parkour-start handler is wired later inside LobbyEventRegistrar because it depends on
         // LobbyParkourService which is constructed there.
 
@@ -53,6 +74,7 @@ public class LobbyModule implements Module {
         NpcConfigSection.INSTANCE.addListener(npcManager::onConfigApplied);
         npcManager.onConfigApplied(NpcConfigSection.INSTANCE.current());
         new NpcCommand(npcManager);
+        new MenuCommand(menuManager);
 
         // Legacy parkour hologram — still built here because Phase 2 only adapter-fed NPCs to config;
         // hologram-per-NPC coupling is Phase 5 polish per ROADMAP.
