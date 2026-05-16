@@ -84,9 +84,13 @@ public final class LaunchPadManager {
     }
 
     public void onMove(PlayerMoveEvent event) {
-        Player player = event.getPlayer();
+        // Fast-path: PlayerMoveEvent fires 5-10× per second per player. When nobody is jumping
+        // this listener should bail in O(1) without even touching the player object.
+        if (activeJump.isEmpty() && jumpCooldownUntil.isEmpty()) return;
 
-        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) {
+        Player player = event.getPlayer();
+        GameMode mode = player.getGameMode();
+        if (mode == GameMode.CREATIVE || mode == GameMode.SPECTATOR) {
             return;
         }
 

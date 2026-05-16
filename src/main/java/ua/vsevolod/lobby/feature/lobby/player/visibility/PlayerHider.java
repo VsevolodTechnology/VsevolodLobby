@@ -51,20 +51,21 @@ public final class PlayerHider {
     private void onSpawn(PlayerSpawnEvent event) {
         Player player = event.getPlayer();
 
+        // applyWorldVisibilityRule already calls updateViewerRule internally.
         applyWorldVisibilityRule(player);
-        player.updateViewerRule();
-        refreshTabFor(player);
 
-        for (Player online : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-            if (online == player) continue;
-            if (isHidden(online)) {
-                hideFromTab(online, player);
-                online.updateViewerRule();
+        // Cache the player list once — was iterated twice (refreshTabFor + the loop below).
+        var online = MinecraftServer.getConnectionManager().getOnlinePlayers();
+        refreshTabFor(player, online);
+
+        for (Player other : online) {
+            if (other == player) continue;
+            if (isHidden(other)) {
+                hideFromTab(other, player);
+                other.updateViewerRule();
             }
         }
 
-
-        // И обновляем предмет
         updateToggleItem(player);
     }
 
@@ -105,9 +106,9 @@ public final class PlayerHider {
             );
         }
 
-        refreshTabFor(player);
+        // applyWorldVisibilityRule already calls updateViewerRule — don't double-recalc.
         applyWorldVisibilityRule(player);
-        player.updateViewerRule();
+        refreshTabFor(player, MinecraftServer.getConnectionManager().getOnlinePlayers());
         updateToggleItem(player);
     }
 
@@ -140,20 +141,13 @@ public final class PlayerHider {
      * Если выключено:
      * - возвращаем всех остальных игроков в TAB
      */
-    private void refreshTabFor(Player player) {
-        if (isHidden(player)) {
-            for (Player target : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-                if (target == player) continue;
-                hideFromTab(player, target);
-            }
-        } else {
-            for (Player target : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-                if (target == player) continue;
-                showInTab(player, target);
-            }
+    private void refreshTabFor(Player player, java.util.Collection<Player> onlinePlayers) {
+        boolean hidden = isHidden(player);
+        for (Player target : onlinePlayers) {
+            if (target == player) continue;
+            if (hidden) hideFromTab(player, target);
+            else        showInTab(player, target);
         }
-
-        // Сам игрок должен оставаться у себя в TAB как обычно
     }
 
     /**

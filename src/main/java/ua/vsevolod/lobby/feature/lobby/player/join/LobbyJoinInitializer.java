@@ -75,7 +75,7 @@ public final class LobbyJoinInitializer {
     }
 
     private void setupProfile(Player player) {
-        player.setDisplayName(Text.c(LobbyConfig.Project.WHITE_COLOR_ORIGINAL + player.getUsername()));
+        player.setDisplayName(Text.raw(LobbyConfig.Project.WHITE_COLOR_ORIGINAL + player.getUsername()));
 
         if (LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername())) {
             player.setPermissionLevel(4);

@@ -164,9 +164,17 @@ public final class ParkourLeaderboardHologramService {
     }
 
     private Collection<Player> currentViewers() {
-        return MinecraftServer.getConnectionManager().getOnlinePlayers().stream()
-                .filter(player -> viewers.contains(player.getUuid()))
-                .toList();
+        // Resolve players directly from the viewers set (O(viewers)) instead of streaming
+        // ALL online players and filtering (O(online + viewers)). Stale viewer UUIDs whose
+        // player disconnected before we cleaned up just resolve to null and are skipped.
+        if (viewers.isEmpty()) return java.util.List.of();
+        var connectionManager = MinecraftServer.getConnectionManager();
+        var resolved = new java.util.ArrayList<Player>(viewers.size());
+        for (UUID id : viewers) {
+            Player p = connectionManager.getOnlinePlayerByUuid(id);
+            if (p != null) resolved.add(p);
+        }
+        return resolved;
     }
 
     private Component rankComponent(int rank, ParkourLeaderboardEntry entry) {
@@ -185,7 +193,7 @@ public final class ParkourLeaderboardHologramService {
 
         String trimmedName = MinecraftFontMetrics.trimToWidth(entry.playerName(), NAME_COLUMN_WIDTH, "...");
         String alignedName = MinecraftFontMetrics.padStartToWidth(trimmedName, NAME_COLUMN_WIDTH);
-        return Text.c(rowColor(rank) + alignedName);
+        return Text.raw(rowColor(rank) + alignedName);   // dynamic per player name — uncached
     }
 
     private Component scoreComponent(int rank, ParkourLeaderboardEntry entry) {
@@ -193,7 +201,7 @@ public final class ParkourLeaderboardHologramService {
             return Text.c("&8" + String.format("%4s", "--"));
         }
 
-        return Text.c(rowColor(rank) + String.format("%4d", entry.score()));
+        return Text.raw(rowColor(rank) + String.format("%4d", entry.score()));   // dynamic per score
     }
 
     private Component timeComponent(int rank, ParkourLeaderboardEntry entry) {
@@ -201,7 +209,7 @@ public final class ParkourLeaderboardHologramService {
             return Text.c("&8--:--.--");
         }
 
-        return Text.c(rowColor(rank) + ParkourTimeFormatter.leaderboard(entry.durationMillis()));
+        return Text.raw(rowColor(rank) + ParkourTimeFormatter.leaderboard(entry.durationMillis()));   // dynamic per time
     }
 
     private String rowColor(int rank) {

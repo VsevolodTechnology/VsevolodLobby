@@ -103,7 +103,7 @@ public final class LobbyWelcomeHologramService {
                 .append(Component.newline())
 
                 .append(Text.c(white + "Рады видеть тебя, "))
-                .append(Text.c(secondary + playerName)) // Акцент на имени игрока
+                .append(Text.raw(secondary + playerName)) // dynamic — bypass cache to avoid heap growth
                 .append(Text.c(white + ", на нашем сервере"))
                 .append(Component.newline())
                 .append(Component.newline())
@@ -122,7 +122,7 @@ public final class LobbyWelcomeHologramService {
 
                 // Статистика (в стиле примера)
                 .append(Text.c(white + "Общий онлайн всех режимов "))
-                .append(Text.c(white + "составляет "+brand + getGlobalOnline() +" &lчеловек!&r")) // Динамическое значение, оранжевое, жирное
+                .append(Text.raw(white + "составляет " + brand + getGlobalOnline() + " &lчеловек!&r")) // dynamic — bypass cache
                 .append(Component.newline())
                 .append(Component.newline())
 

@@ -17,9 +17,10 @@ public class LobbyPlayerChatListener implements LobbyEventRegistration {
             if (!LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername()))
                 return;
 
-            var message = Text.c(LobbyConfig.Project.WHITE_COLOR_ORIGINAL +player.getUsername())
+            // Both player name and chat message are dynamic → uncached parse, no heap growth.
+            var message = Text.raw(LobbyConfig.Project.WHITE_COLOR_ORIGINAL + player.getUsername())
                     .append(Component.space()).append(Component.text(">"))
-                    .append(Component.space()).append(Text.c(event.getRawMessage()));
+                    .append(Component.space()).append(Text.raw(event.getRawMessage()));
             MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(e -> e.sendMessage(message));
         });
     }

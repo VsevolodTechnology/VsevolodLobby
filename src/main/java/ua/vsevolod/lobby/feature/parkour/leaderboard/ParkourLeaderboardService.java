@@ -23,8 +23,11 @@ public final class ParkourLeaderboardService {
     }
 
     public void startAutoRefresh() {
+        // store.loadEntries() blocks on file or MongoDB I/O; run it on a virtual thread so the
+        // tick scheduler doesn't stall waiting for network. The result is then handed back to
+        // the tick by replaceEntries() (synchronized — safe to call from any thread).
         MinecraftServer.getSchedulerManager()
-                .buildTask(this::refreshFromStore)
+                .buildTask(() -> Thread.startVirtualThread(this::refreshFromStore))
                 .repeat(Duration.ofMillis(LobbyConfig.Parkour.LEADERBOARD_SYNC_MILLIS))
                 .schedule();
     }

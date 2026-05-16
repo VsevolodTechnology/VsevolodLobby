@@ -12,7 +12,8 @@ import ua.vsevolod.lobby.util.Text;
 
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class LobbyConfig {
 
@@ -48,7 +49,17 @@ public final class LobbyConfig {
         public static final String WORLD_MAP_PATH = "worlds/lobby";
         public static final String HOST_ADDRESS = "0.0.0.0";
         public static final int HOST_PORT = 25565;
-        public static final List<String> BYPASS_USERS = new CopyOnWriteArrayList<>(List.of("LPVania", "godes2020"));
+        /**
+         * Hash-based set for O(1) {@code contains(...)} — replaces the previous CopyOnWriteArrayList
+         * which was O(n). Called many times per tick (tab updates, inventory locks, chat filter,
+         * gamemode helper). Hardcoded owners are seeded below; runtime ops come from OpsStore.
+         */
+        public static final Set<String> BYPASS_USERS = ConcurrentHashMap.newKeySet();
+        static {
+            BYPASS_USERS.add("LPVania");
+            BYPASS_USERS.add("godes2020");
+        }
+
         public static final String OPS_OWNER = "godes2020";
         public static final GameMode DEFAULT_GAME_MODE = GameMode.ADVENTURE;
         public static final String IDENTIFIER_VELOCITY_MESSAGE = "vsevolod_lobby_protocol";
