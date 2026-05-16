@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.player.PlayerDisconnectEvent;
 import net.minestom.server.event.server.ServerTickMonitorEvent;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.integration.spark.SparkService;
@@ -13,6 +14,9 @@ import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class LobbyTabListManager {
@@ -22,10 +26,14 @@ public final class LobbyTabListManager {
             new AtomicReference<>(DateTimeFormatter.ofPattern("HH:mm"));
     private String currentTimeFormatPattern = "HH:mm";
 
+    /** Last-pushed (header, footer) string per viewer; equal-text packets are skipped. */
+    private final Map<UUID, RenderedTab> lastRendered = new ConcurrentHashMap<>();
+
     public LobbyTabListManager(GlobalEventHandler events) {
         events.addListener(ServerTickMonitorEvent.class, event ->
                 lastTickMs.set(event.getTickMonitor().getTickTime())
         );
+        events.addListener(PlayerDisconnectEvent.class, e -> lastRendered.remove(e.getPlayer().getUuid()));
         scheduleRefresh();
     }
 
@@ -52,9 +60,7 @@ public final class LobbyTabListManager {
             try {
                 timeFormatter.set(DateTimeFormatter.ofPattern(pattern));
                 currentTimeFormatPattern = pattern;
-            } catch (IllegalArgumentException ignored) {
-                // keep previous formatter
-            }
+            } catch (IllegalArgumentException ignored) { /* keep previous */ }
         }
         return timeFormatter.get();
     }
@@ -65,22 +71,32 @@ public final class LobbyTabListManager {
                 ? cfg.msptBypassTemplate().replace("{mspt}", formattedMspt)
                 : "";
 
-        Component header = renderBlock(cfg.header(), player, time, online, msptPart);
-        Component footer = renderBlock(cfg.footer(), player, time, online, msptPart);
+        String header = renderBlock(cfg.header(), player, time, online, msptPart);
+        String footer = renderBlock(cfg.footer(), player, time, online, msptPart);
 
-        player.sendPlayerListHeaderAndFooter(header, footer);
+        RenderedTab previous = lastRendered.get(player.getUuid());
+        if (previous != null && previous.header.equals(header) && previous.footer.equals(footer)) {
+            return;
+        }
+        lastRendered.put(player.getUuid(), new RenderedTab(header, footer));
+
+        Component headerComponent = Text.raw(header);
+        Component footerComponent = Text.raw(footer);
+        player.sendPlayerListHeaderAndFooter(headerComponent, footerComponent);
     }
 
-    private static Component renderBlock(List<String> lines, Player player, String time, int online, String msptPart) {
+    private static String renderBlock(List<String> lines, Player player, String time, int online, String msptPart) {
+        if (lines.isEmpty()) return "";
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < lines.size(); i++) {
             if (i > 0) sb.append('\n');
             sb.append(substitute(lines.get(i), player, time, online, msptPart));
         }
-        return Text.raw(sb.toString());
+        return sb.toString();
     }
 
     private static String substitute(String line, Player player, String time, int online, String msptPart) {
+        if (line.indexOf('{') < 0) return line;   // fast path: no placeholders
         return line
                 .replace("{ping}", Integer.toString(player.getLatency()))
                 .replace("{online}", Integer.toString(online))
@@ -88,4 +104,6 @@ public final class LobbyTabListManager {
                 .replace("{mspt}", msptPart)
                 .replace("{player}", player.getUsername());
     }
+
+    private record RenderedTab(String header, String footer) {}
 }

@@ -8,6 +8,7 @@ import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
 import ua.vsevolod.lobby.bootstrap.module.SparkModule;
 import ua.vsevolod.lobby.config.ProxyConfig;
 import ua.vsevolod.lobby.feature.admin.config.ConfigManager;
+import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.tab.TabConfigSection;
 import ua.vsevolod.lobby.integration.console.ConsoleListener;
@@ -26,6 +27,11 @@ public class ServerBootstrap {
                 ? MinecraftServer.init(new Auth.Velocity(proxyConfig.velocitySecret()))
                 : MinecraftServer.init();
 
+        // Disable per-packet zlib on the backend channel. With Velocity in front, sending compressed
+        // packets across loopback is wasted CPU — Velocity handles compression to the real client.
+        // Old code had threshold=0 which compresses *every* packet, the worst-case option.
+        MinecraftServer.setCompressionThreshold(-1);
+
         if (proxyConfig.velocityEnabled()) {
             HandshakeOverride.install();
             System.out.println("[Bootstrap] Velocity modern forwarding ENABLED — accepting any client protocol (Via translates downstream).");
@@ -33,6 +39,7 @@ public class ServerBootstrap {
 
         CONFIG_MANAGER.register(TabConfigSection.INSTANCE);
         CONFIG_MANAGER.register(SidebarConfigSection.INSTANCE);
+        CONFIG_MANAGER.register(NpcConfigSection.INSTANCE);
         CONFIG_MANAGER.loadAll();
 
         ShutdownHook.register();

@@ -12,6 +12,7 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
     public static final SidebarConfigSection INSTANCE = new SidebarConfigSection();
 
     private static final SidebarConfig DEFAULTS = new SidebarConfig(
+            true,
             800L,
             "&7« {frame}&f &7»",
             List.of(
@@ -44,6 +45,9 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
             # Phase-1 scope: TEXT and animation frames hot-reload live.
             # Changing animation interval / refresh interval requires a server restart.
             # Reordering / adding new lines is Phase-5 (not yet supported).
+
+            # Master switch. false → no sidebar is shown to anyone. /reload toggles live.
+            enabled: true
 
             title:
               # Frame template — `{frame}` substitutes one entry from `frames` each tick.
@@ -98,6 +102,7 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
 
     @Override
     public SidebarConfig parse(Map<String, Object> yaml) {
+        boolean enabled = asBool(yaml.get("enabled"), DEFAULTS.enabled());
         Map<String, Object> title = asMap(yaml.get("title"));
         long animMs   = asLong(title.get("animation-interval-ms"), DEFAULTS.titleAnimationIntervalMs());
         String tpl    = asString(title.get("frame-template"), DEFAULTS.titleFrameTemplate());
@@ -114,9 +119,15 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
         String statusOff   = asString(yaml.get("status-offline"), DEFAULTS.statusOffline());
 
         return new SidebarConfig(
-                animMs, tpl, frames, refreshMs, welcome, desc,
+                enabled, animMs, tpl, frames, refreshMs, welcome, desc,
                 modesHeader, pingTpl, srvTpl, statusOn, statusSoon, statusOff
         );
+    }
+
+    private static boolean asBool(Object o, boolean fallback) {
+        if (o instanceof Boolean b) return b;
+        if (o instanceof String s) return Boolean.parseBoolean(s.trim());
+        return fallback;
     }
 
     @Override

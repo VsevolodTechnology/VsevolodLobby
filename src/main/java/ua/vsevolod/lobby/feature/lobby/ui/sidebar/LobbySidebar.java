@@ -8,16 +8,18 @@ import ua.vsevolod.lobby.config.server.ServerRegistry;
 import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class LobbySidebar {
 
-    /** Line IDs are fixed at construction; only their content reloads from config. */
     private static final String ID_BLANK_TOP    = "blank_top";
     private static final String ID_WELCOME      = "welcome";
     private static final String ID_BLANK_A      = "blank_a";
-    private static final String ID_DESC         = "desc_";   // suffix with index
+    private static final String ID_DESC         = "desc_";
     private static final String ID_BLANK_B      = "blank_b";
     private static final String ID_MODES_HEADER = "modes_header";
     private static final String ID_BLANK_C      = "blank_c";
@@ -25,6 +27,15 @@ public final class LobbySidebar {
 
     private final PerViewerSidebar sidebar;
     private final AtomicInteger animationIndex = new AtomicInteger(0);
+
+    /** Last-rendered global-line texts → skip resend if unchanged. */
+    private final Map<String, String> lastGlobalText = new HashMap<>();
+
+    /** Last-rendered per-player ping line. */
+    private final Map<UUID, String> lastPingText = new HashMap<>();
+
+    /** Last rendered title frame string — skip resend if unchanged. */
+    private String lastTitle = "";
 
     public LobbySidebar() {
         this.sidebar = new PerViewerSidebar(Text.c("&#FF9700&lOVERDYN"));
@@ -58,6 +69,7 @@ public final class LobbySidebar {
 
     private void registerLine(String id, String text, int score) {
         sidebar.createLine(new Sidebar.ScoreboardLine(id, Text.c(text), score, Sidebar.NumberFormat.blank()));
+        lastGlobalText.put(id, text);
     }
 
     private void startAnimationTask() {
@@ -78,56 +90,74 @@ public final class LobbySidebar {
 
     private void tickAnimation() {
         SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        if (!cfg.enabled()) return;
         List<String> frames = cfg.titleFrames();
         if (frames.isEmpty()) return;
         int i = animationIndex.getAndUpdate(old -> (old + 1) % frames.size());
         String rendered = cfg.titleFrameTemplate().replace("{frame}", frames.get(i));
+        if (rendered.equals(lastTitle)) return;
+        lastTitle = rendered;
         sidebar.setTitle(Text.raw(rendered));
     }
 
     private void refreshAll() {
         SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        applyEnabledState(cfg);
+        if (!cfg.enabled()) return;
 
-        sidebar.updateLineContent(ID_WELCOME, Text.raw(cfg.welcomeText()));
+        updateGlobalLine(ID_WELCOME, cfg.welcomeText());
         for (int i = 0; i < cfg.descriptionLines().size(); i++) {
-            sidebar.updateLineContent(ID_DESC + i, Text.raw(cfg.descriptionLines().get(i)));
+            updateGlobalLine(ID_DESC + i, cfg.descriptionLines().get(i));
         }
-        sidebar.updateLineContent(ID_MODES_HEADER, Text.raw(cfg.modesHeader()));
+        updateGlobalLine(ID_MODES_HEADER, cfg.modesHeader());
 
         for (ServerInfo server : ServerRegistry.LOBBY_SERVERS) {
-            sidebar.updateLineContent(serverLineId(server), Text.raw(formatServerLine(server, cfg)));
+            updateGlobalLine(serverLineId(server), formatServerLine(server, cfg));
         }
 
         for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-            sidebar.updateLineContent(
-                    ID_PING,
-                    Text.raw(cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()))),
-                    player
-            );
+            updatePing(player);
         }
     }
 
+    /** Called every refresh tick — adds/removes viewers based on current enabled state. */
+    private void applyEnabledState(SidebarConfig cfg) {
+        if (cfg.enabled()) {
+            for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
+                sidebar.addViewer(player);
+            }
+        } else {
+            for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
+                sidebar.removeViewer(player);
+            }
+        }
+    }
+
+    private void updateGlobalLine(String id, String text) {
+        String previous = lastGlobalText.get(id);
+        if (text.equals(previous)) return;
+        lastGlobalText.put(id, text);
+        sidebar.updateLineContent(id, Text.raw(text));
+    }
+
     public void show(Player player) {
+        if (!SidebarConfigSection.INSTANCE.current().enabled()) return;
         sidebar.addViewer(player);
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        sidebar.updateLineContent(
-                ID_PING,
-                Text.raw(cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()))),
-                player
-        );
+        updatePing(player);
     }
 
     public void hide(Player player) {
         sidebar.removeViewer(player);
+        lastPingText.remove(player.getUuid());
     }
 
     public void updatePing(Player player) {
         SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        sidebar.updateLineContent(
-                ID_PING,
-                Text.raw(cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()))),
-                player
-        );
+        String rendered = cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()));
+        String previous = lastPingText.get(player.getUuid());
+        if (rendered.equals(previous)) return;
+        lastPingText.put(player.getUuid(), rendered);
+        sidebar.updateLineContent(ID_PING, Text.raw(rendered), player);
     }
 
     private static String serverLineId(ServerInfo server) {

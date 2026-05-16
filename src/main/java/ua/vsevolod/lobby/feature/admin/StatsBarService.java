@@ -24,6 +24,10 @@ public final class StatsBarService {
     private final Map<Player, BossBar> tpsBars = new ConcurrentHashMap<>();
     private final Map<Player, BossBar> ramBars = new ConcurrentHashMap<>();
 
+    /** Skip-if-unchanged caches. */
+    private final Map<Player, String> lastTpsLabel = new ConcurrentHashMap<>();
+    private final Map<Player, String> lastRamLabel = new ConcurrentHashMap<>();
+
     private volatile double lastTickMs = 50.0;
     private boolean registered = false;
 
@@ -44,6 +48,8 @@ public final class StatsBarService {
             if (t != null) player.hideBossBar(t);
             BossBar r = ramBars.remove(player);
             if (r != null) player.hideBossBar(r);
+            lastTpsLabel.remove(player);
+            lastRamLabel.remove(player);
         });
 
         MinecraftServer.getSchedulerManager()
@@ -121,26 +127,31 @@ public final class StatsBarService {
             Player p = entry.getKey();
             int ping = p.getLatency();
             String pingTag = ping < 80 ? "&a" : ping < 200 ? "&e" : "&c";
-            BossBar bar = entry.getValue();
-            bar.name(Text.raw(String.format(
+            String label = String.format(
                     Locale.US,
                     "&#FFE259ᴛᴘs: %s%.1f &7| &#FFE259ᴍsᴘᴛ: %s%.2f &7| &#FFE259ᴘɪɴɢ: %s%dᴍs",
                     tpsColorTag, tps,
                     tpsColorTag, mspt,
-                    pingTag, ping
-            )));
+                    pingTag, ping);
+            if (label.equals(lastTpsLabel.get(p))) continue;   // skip duplicate
+            lastTpsLabel.put(p, label);
+            BossBar bar = entry.getValue();
+            bar.name(Text.raw(label));
             bar.progress(tpsProgress);
             bar.color(tpsColor);
         }
 
         if (!ramBars.isEmpty()) {
+            String ramLabel = String.format(
+                    Locale.US,
+                    "&#FFE259ʀᴀᴍ: %s%d ᴍʙ &7/ &f%d ᴍʙ &7(&f%.1f%%&7)",
+                    ramColorTag, usedMB, maxMB, ramRatio * 100.0);
             for (Map.Entry<Player, BossBar> entry : ramBars.entrySet()) {
+                Player p = entry.getKey();
+                if (ramLabel.equals(lastRamLabel.get(p))) continue;
+                lastRamLabel.put(p, ramLabel);
                 BossBar bar = entry.getValue();
-                bar.name(Text.raw(String.format(
-                        Locale.US,
-                        "&#FFE259ʀᴀᴍ: %s%d ᴍʙ &7/ &f%d ᴍʙ &7(&f%.1f%%&7)",
-                        ramColorTag, usedMB, maxMB, ramRatio * 100.0
-                )));
+                bar.name(Text.raw(ramLabel));
                 bar.progress(ramProgress);
                 bar.color(ramColor);
             }

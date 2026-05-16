@@ -10,10 +10,10 @@ import net.minestom.server.event.player.PlayerStartFlyingEvent;
 import net.minestom.server.instance.Instance;
 import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicManager;
 import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicPlayerListener;
-import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpc;
-import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpcActionBinding;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpcInteractionListener;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpcService;
+import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcActionExecutor;
+import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.parkour.LobbyParkourService;
 import ua.vsevolod.lobby.feature.lobby.interaction.qr.LobbyQrListener;
 import ua.vsevolod.lobby.feature.lobby.player.chat.LobbyPlayerChatListener;
@@ -49,15 +49,15 @@ public final class LobbyEventRegistrar {
     public LobbyEventRegistrar(
             GlobalEventHandler events,
             Instance lobbyInstance,
-            LobbyNpc modeSelectorNpc,
-            LobbyNpc parkourNpc,
+            NpcManager npcManager,
+            NpcActionExecutor npcActionExecutor,
             LobbySidebar sidebar,
             LobbyModeSelectorMenu lobbyMenu
     ) {
         this.musicManager = new LobbyMusicManager();
         this.launchPadManager = new LaunchPadManager();
 
-        registerLobbyListeners(events, lobbyInstance, modeSelectorNpc, parkourNpc, sidebar, lobbyMenu);
+        registerLobbyListeners(events, lobbyInstance, npcManager, npcActionExecutor, sidebar, lobbyMenu);
         registerMovement(events);
         registerVisibility(events);
 //        registerProtocolBridge();
@@ -66,8 +66,8 @@ public final class LobbyEventRegistrar {
     private void registerLobbyListeners(
             GlobalEventHandler events,
             Instance lobbyInstance,
-            LobbyNpc modeSelectorNpc,
-            LobbyNpc parkourNpc,
+            NpcManager npcManager,
+            NpcActionExecutor npcActionExecutor,
             LobbySidebar sidebar,
             LobbyModeSelectorMenu lobbyMenu
     ) {
@@ -82,7 +82,7 @@ public final class LobbyEventRegistrar {
                 new ParkourLeaderboardHologramService(parkourLeaderboardService);
 
         LobbyItemService itemService = new LobbyItemService();
-        LobbyNpcService npcService = new LobbyNpcService(List.of(modeSelectorNpc, parkourNpc));
+        LobbyNpcService npcService = new LobbyNpcService(npcManager);
         LobbyJoinInitializer joinInitializer = new LobbyJoinInitializer(
                 musicManager,
                 sidebar,
@@ -95,6 +95,9 @@ public final class LobbyEventRegistrar {
         LobbyParkourService parkourService =
                 new LobbyParkourService(lobbyInstance, joinInitializer, parkourLeaderboardService);
 
+        // Now that parkourService exists, register the parkour-start action handler.
+        npcActionExecutor.registerSimple("parkour-start", parkourService::startFromNpc);
+
         List<LobbyEventRegistration> listeners = List.of(
                 new MinestomTagsWorkaround(),
                 new LobbyPlayerLoginListener(),
@@ -104,10 +107,7 @@ public final class LobbyEventRegistrar {
                 new VoidProtectionListener(),
                 new LobbyBlockProtectionListener(),
                 new LobbyJoinListener(joinInitializer),
-                new LobbyNpcInteractionListener(List.of(
-                        new LobbyNpcActionBinding(modeSelectorNpc, player -> player.openInventory(lobbyMenu.getMenu())),
-                        new LobbyNpcActionBinding(parkourNpc, parkourService::startFromNpc)
-                )),
+                new LobbyNpcInteractionListener(npcManager, npcActionExecutor),
                 new LobbyModeMenuItemListener(lobbyMenu),
                 new LobbyQrListener(),
                 new LobbyMusicPlayerListener(musicManager),

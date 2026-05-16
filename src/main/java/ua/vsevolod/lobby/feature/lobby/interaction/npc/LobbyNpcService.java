@@ -2,21 +2,24 @@ package ua.vsevolod.lobby.feature.lobby.interaction.npc;
 
 import net.minestom.server.entity.Player;
 
-import java.util.List;
-
+/**
+ * Thin pass-through to {@link NpcManager} kept for backwards compatibility with the existing
+ * {@code LobbyJoinInitializer} signature. The actual list of NPCs is owned by the manager and
+ * changes on /reload — this wrapper does not cache anything.
+ */
 public final class LobbyNpcService {
 
-    private final List<LobbyNpc> npcs;
+    private final NpcManager manager;
 
-    public LobbyNpcService(List<LobbyNpc> npcs) {
-        this.npcs = List.copyOf(npcs);
+    public LobbyNpcService(NpcManager manager) {
+        this.manager = manager;
     }
 
     public void showTo(Player player) {
-        npcs.forEach(npc -> npc.addViewer(player));
+        manager.showTo(player);
     }
 
     public void hideFrom(Player player) {
-        npcs.forEach(npc -> npc.removeViewer(player));
+        manager.hideFrom(player);
     }
 }

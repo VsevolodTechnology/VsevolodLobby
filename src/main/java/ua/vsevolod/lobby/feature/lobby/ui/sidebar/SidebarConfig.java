@@ -13,6 +13,7 @@ import java.util.List;
  * </ul>
  */
 public record SidebarConfig(
+        boolean enabled,
         long titleAnimationIntervalMs,
         String titleFrameTemplate,
         List<String> titleFrames,

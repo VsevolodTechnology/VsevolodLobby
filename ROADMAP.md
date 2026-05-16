@@ -86,7 +86,7 @@
 
 ### 2.1 Конфиг
 
-- [ ] `config/npcs.yml` — структура:
+- [x] `config/npcs.yml` — структура:
   ```yaml
   npcs:
     - id: "mode-selector"
@@ -120,24 +120,28 @@
 
 ### 2.2 Реализация
 
-- [ ] `NpcConfig`, `NpcDefinition`, `NpcAction` классы
-- [ ] `NpcManager` — отвечает за создание/удаление/обновление NPC по списку из конфига
-  - [ ] `reload()` — diff (по id) старого и нового списка: remove исчезнувших, добавить новых, update изменённых (position/skin → respawn)
-  - [ ] поддержка `execute-as: op` — поднимать permission-level игрока на время выполнения команды и откатывать сразу после
-- [ ] Заменить хардкод в `LobbyModule.load()` — теперь NPC из конфига
-- [ ] Click-handler — единая точка `NpcInteractionDispatcher` принимающая right/left и id NPC, делегирует на action
+- [x] `NpcsConfig`, `NpcDefinition`, `NpcAction`, `NpcPosition` records
+- [x] `NpcManager` — отвечает за создание/удаление/обновление NPC по списку из конфига
+  - [x] `onConfigApplied()` — diff (по id) старого и нового списка: remove исчезнувших, добавить новых, update изменённых (position/skin → respawn)
+  - [x] поддержка `execute-as-op` — поднимать permission-level игрока на время выполнения команды и откатывать сразу после (в `NpcActionExecutor.runCommand`)
+- [x] Заменить хардкод в `LobbyModule.load()` — теперь NPC из конфига
+- [x] Click-handler — `LobbyNpcInteractionListener` различает right/left, делегирует в `NpcActionExecutor`
 
 ### 2.3 In-game команды
 
-- [ ] `/npc add <id>` — создаёт NPC со «слепком» текущей позиции игрока, добавляет в `npcs.yml`, сохраняет, спавнит
-- [ ] `/npc remove <id>` — деспавнит и удаляет из конфига
-- [ ] `/npc move <id>` — перемещает на текущую позицию игрока, обновляет конфиг
-- [ ] `/npc setname <id> <name>` (или null)
-- [ ] `/npc setskin <id> <username>` (или null)
-- [ ] `/npc setaction <id> <right|left> <type> <target> [as: player|op]`
-- [ ] `/npc list` — список всех NPC с координатами
-- [ ] tab-completion для всех команд (autocomplete id из конфига)
-- [ ] все команды owner-only
+- [x] `/npc add <id>` — создаёт NPC со «слепком» текущей позиции игрока, добавляет в `npcs.yml`, сохраняет, спавнит
+- [x] `/npc remove <id>` — деспавнит и удаляет из конфига
+- [x] `/npc move <id>` — перемещает на текущую позицию игрока, обновляет конфиг
+- [x] `/npc setname <id> <name>` (или `none`)
+- [x] `/npc setskin <id> <username>` (или `none`)
+- [x] `/npc setdesc <id> <text>` (или `none`)
+- [x] `/npc setglow <id> <true|false>`
+- [x] `/npc setglowcolor <id> <color>` *(дополнительно — цвет подсветки через team)*
+- [x] `/npc setvisible <id> <true|false>` *(дополнительно — выключить отображение)*
+- [x] `/npc setaction <id> <right|left> <type> [target] [as-op]`
+- [x] `/npc list` — список всех NPC с координатами
+- [x] tab-completion для id (autocomplete из конфига)
+- [x] все команды owner-only
 
 ### 2.4 Hologram → подцеплено к NPC
 
@@ -146,8 +150,22 @@
 
 ### 2.5 Коммит
 
-- [ ] commit: "Phase 2: NPC config + CRUD commands"
-- [ ] push
+- [x] commit: "Phase 2: NPC config + CRUD commands"
+- [x] push
+
+### 2.6 Бонус — оптимизация (внутри Phase 2 коммита)
+
+Применены пункты из OPTIMIZATION.md:
+- [x] Tab — skip-if-unchanged per-player, fast-path для строк без плейсхолдеров
+- [x] Sidebar — skip-if-unchanged per-line; кеш заголовка-анимации; учёт `enabled: false`
+- [x] StatsBar — skip-if-unchanged per-player для TPS и RAM баров
+- [x] `setCompressionThreshold(-1)` вместо `0` (раньше сжимался каждый пакет)
+- [x] `minestom.chunk-view-distance=6`, `entity-view-distance=4`, `entity-synchronization-ticks=20` через `System.setProperty` в Main
+- [x] `sidebar.enabled` мастер-флаг — выключение скорборда через конфиг
+
+### 2.7 Текущая позиция
+
+- [x] **Фаза 2 → реализована, ждёт пользовательской проверки в игре**
 
 ---
 
