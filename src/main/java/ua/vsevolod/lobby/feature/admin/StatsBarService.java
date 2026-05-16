@@ -5,7 +5,7 @@ import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.player.PlayerDisconnectEvent;
-import net.minestom.server.event.server.ServerTickMonitorEvent;
+import ua.vsevolod.lobby.integration.spark.SparkService;
 import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
@@ -33,7 +33,6 @@ public final class StatsBarService {
     private final Map<UUID, String> lastTpsLabel = new ConcurrentHashMap<>();
     private final Map<UUID, String> lastRamLabel = new ConcurrentHashMap<>();
 
-    private volatile double lastTickMs = 50.0;
     private boolean registered = false;
 
     private StatsBarService() {
@@ -43,9 +42,7 @@ public final class StatsBarService {
         if (registered) return;
         registered = true;
 
-        events.addListener(ServerTickMonitorEvent.class, event ->
-                lastTickMs = event.getTickMonitor().getTickTime()
-        );
+        // MSPT now read from Spark instead of the local tick monitor — no need to listen.
 
         events.addListener(PlayerDisconnectEvent.class, event -> {
             UUID id = event.getPlayer().getUuid();
@@ -109,8 +106,11 @@ public final class StatsBarService {
         // Audit MED-07: TPS computation was unconditional. Now both sections are gated by the
         // same `if (have*)` pattern — no derived values are computed unless a viewer needs them.
         if (haveTps) {
-            double mspt = lastTickMs;
-            double tps = Math.min(20.0, 1000.0 / Math.max(mspt, 0.0001));
+            // Use Spark's 1-minute MEAN — the previous "1000/lastTickMs" formula amplified
+            // single-tick noise (one slow tick made TPS dive to 15 even though average was 20).
+            // The mean stays visually stable; spikes show up on /spark or in MsptLogger.
+            double mspt = SparkService.getMspt();
+            double tps = SparkService.getTps();
             float tpsProgress = (float) Math.max(0, Math.min(1, tps / 20.0));
             BossBar.Color tpsColor =
                     tps >= 18.5 ? BossBar.Color.GREEN :

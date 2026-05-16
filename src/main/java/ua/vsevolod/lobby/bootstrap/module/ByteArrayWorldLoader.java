@@ -10,18 +10,34 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
+
+    /** {@code r.<rx>.<rz>.mca} — one region = 32×32 chunks. */
+    private static final Pattern REGION_NAME = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
 
     private final byte[] worldBytes;
     private final String tempPrefix;
 
     private volatile Path tempDir;
     private volatile AnvilLoader delegate;
+    /**
+     * Set of {@code (rx,rz)} keys for region files that physically exist in the saved world.
+     * Any chunk whose region is NOT in here is rejected immediately by {@link #loadChunk}
+     * with {@code null} — Minestom treats null as "no chunk, fall through to generator".
+     * Since the lobby has no generator set, the chunk simply stays unloaded and the client
+     * sees void. This avoids AnvilLoader probing the filesystem for non-existent .mca files
+     * (the Spark profile caught 0.30 s of FJ-pool CPU per chunk-load cycle on this path).
+     */
+    private volatile Set<Long> presentRegions;
 
     public ByteArrayWorldLoader(byte[] worldBytes) {
         this(worldBytes, "minestom-world-");
@@ -49,11 +65,39 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
 
                 this.tempDir = dir;
                 this.delegate = new AnvilLoader(dir);
+                this.presentRegions = scanRegions(dir);
+                System.out.println("[ByteArrayWorldLoader] Lobby loaded — "
+                        + presentRegions.size() + " region file(s) (chunks outside are skipped).");
                 return this.delegate;
             } catch (IOException e) {
                 throw new UncheckedIOException("Failed to create temp world from bytes", e);
             }
         }
+    }
+
+    /**
+     * Walks the unzipped world dir for {@code r.X.Z.mca} files and returns the (rx, rz)
+     * coordinates as packed-long keys. Cheap one-time cost at world load.
+     */
+    private static Set<Long> scanRegions(Path worldDir) {
+        Set<Long> out = new HashSet<>();
+        try (Stream<Path> walk = Files.walk(worldDir)) {
+            walk.filter(Files::isRegularFile).forEach(p -> {
+                Matcher m = REGION_NAME.matcher(p.getFileName().toString());
+                if (m.matches()) {
+                    int rx = Integer.parseInt(m.group(1));
+                    int rz = Integer.parseInt(m.group(2));
+                    out.add(regionKey(rx, rz));
+                }
+            });
+        } catch (IOException e) {
+            System.err.println("[ByteArrayWorldLoader] Region scan failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    private static long regionKey(int rx, int rz) {
+        return (((long) rx) << 32) | (rz & 0xFFFFFFFFL);
     }
 
     @Override
@@ -63,7 +107,20 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
 
     @Override
     public @Nullable Chunk loadChunk(Instance instance, int chunkX, int chunkZ) {
-        return getOrCreateDelegate().loadChunk(instance, chunkX, chunkZ);
+        AnvilLoader loader = getOrCreateDelegate();
+        // Bail before touching AnvilLoader if this chunk is in a region that doesn't exist
+        // in the saved world. AnvilLoader would otherwise try to open the missing .mca file
+        // (Spark profile flagged this as 0.30 s of FJ-pool CPU per parkour cycle); the void
+        // outside the lobby map should simply stay unloaded for the client.
+        Set<Long> regions = presentRegions;
+        if (regions != null) {
+            int rx = chunkX >> 5;
+            int rz = chunkZ >> 5;
+            if (!regions.contains(regionKey(rx, rz))) {
+                return null;
+            }
+        }
+        return loader.loadChunk(instance, chunkX, chunkZ);
     }
 
     @Override
