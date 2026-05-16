@@ -129,6 +129,15 @@ public final class ProxyOnlineService {
             String serverName = normalize(in.readUTF());
             int online = in.readInt();
 
+            // Whitelist-only writes. Without this guard a modded client could spam
+            // `bungeecord:main` messages with attacker-chosen serverName values and grow
+            // the counts map without bound (any string -> CountSnapshot would be retained
+            // forever — heap leak + slow O(N) iteration in any future readers).
+            // Audit-2026-05-17 finding.
+            if (!registeredServers.contains(serverName)) {
+                return;
+            }
+
             counts.put(serverName, new CountSnapshot(online, System.currentTimeMillis()));
 
         } catch (Exception ignored) {

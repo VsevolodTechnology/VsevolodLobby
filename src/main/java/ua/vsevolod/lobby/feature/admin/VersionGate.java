@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 public final class VersionGate {
@@ -82,7 +83,12 @@ public final class VersionGate {
                     "enabled=" + enabled + "\n" +
                             "min=" + minProtocol + "\n" +
                             "max=" + maxProtocol + "\n";
-            Files.writeString(FILE, content, StandardCharsets.UTF_8);
+            // Atomic tmp+move — a crash during the prior writeString could leave the file
+            // partially written. With this gate, on next load we'd read back broken state and
+            // potentially kick legitimate clients. Same pattern as ConfigManager / OpsStore.
+            Path tmp = FILE.resolveSibling(FILE.getFileName() + ".tmp");
+            Files.writeString(tmp, content, StandardCharsets.UTF_8);
+            Files.move(tmp, FILE, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             System.err.println("[VersionGate] Failed to save: " + e.getMessage());
         }

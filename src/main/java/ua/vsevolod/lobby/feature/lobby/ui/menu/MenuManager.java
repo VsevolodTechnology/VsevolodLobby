@@ -117,8 +117,10 @@ public final class MenuManager {
 
     private static String substitute(String s, Player player) {
         if (s.indexOf('{') < 0) return s;
+        // getOnlinePlayerCount() reads a cached int — getOnlinePlayers().size() previously here
+        // walked the collection iterator, which is pointless for a count. Audit-2026-05-17 HIGH.
         return s.replace("{player}", player.getUsername())
-                .replace("{online}", Integer.toString(MinecraftServer.getConnectionManager().getOnlinePlayers().size()));
+                .replace("{online}", Integer.toString(MinecraftServer.getConnectionManager().getOnlinePlayerCount()));
     }
 
     private void onClick(InventoryPreClickEvent event) {
