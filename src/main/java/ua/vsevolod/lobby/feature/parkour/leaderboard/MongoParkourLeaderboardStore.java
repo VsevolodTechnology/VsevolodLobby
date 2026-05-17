@@ -2,6 +2,7 @@ package ua.vsevolod.lobby.feature.parkour.leaderboard;
 
 import com.mongodb.ErrorCategory;
 import com.mongodb.MongoWriteException;
+import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -70,9 +71,21 @@ public final class MongoParkourLeaderboardStore implements ParkourLeaderboardSub
         List<ParkourLeaderboardEntry> current = loadEntries();
         List<ParkourLeaderboardEntry> updated = updater.apply(current);
 
-        collection.deleteMany(new Document());
-        if (!updated.isEmpty()) {
-            collection.insertMany(updated.stream().map(this::toDocument).toList());
+        // CRIT-07 fix (audit 2026-05-17): wrap deleteMany + insertMany in a transaction so
+        // a crash between the two calls does not wipe the leaderboard. Without the transaction
+        // a server restart between delete and insert would leave the collection empty.
+        try (ClientSession session = client.startSession()) {
+            session.startTransaction();
+            try {
+                collection.deleteMany(session, new Document());
+                if (!updated.isEmpty()) {
+                    collection.insertMany(session, updated.stream().map(this::toDocument).toList());
+                }
+                session.commitTransaction();
+            } catch (Exception e) {
+                session.abortTransaction();
+                throw e;
+            }
         }
 
         return loadEntries();

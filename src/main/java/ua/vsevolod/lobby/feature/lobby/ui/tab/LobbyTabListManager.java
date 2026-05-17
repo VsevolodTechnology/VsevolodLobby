@@ -25,6 +25,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
+import net.minestom.server.timer.Task;
+
 /**
  * Tab list (player list header + footer) renderer + per-player latency icon refresher.
  *
@@ -60,6 +62,8 @@ public final class LobbyTabListManager {
     /** Last latency broadcast for each viewer — avoid resending an unchanged value. */
     private final Map<UUID, Integer> lastBroadcastLatency = new ConcurrentHashMap<>();
 
+    private Task refreshTask;
+
     public LobbyTabListManager(GlobalEventHandler events) {
         events.addListener(ServerTickMonitorEvent.class, event ->
                 lastTickMs.set(event.getTickMonitor().getTickTime())
@@ -69,12 +73,18 @@ public final class LobbyTabListManager {
             lastRendered.remove(id);
             lastBroadcastLatency.remove(id);
         });
+        TabConfigSection.INSTANCE.addChangeListener(this::rescheduleRefresh);
         scheduleRefresh();
         scheduleLatencyBroadcast();
     }
 
+    public void rescheduleRefresh() {
+        if (refreshTask != null) refreshTask.cancel();
+        scheduleRefresh();
+    }
+
     private void scheduleRefresh() {
-        MinecraftServer.getSchedulerManager()
+        refreshTask = MinecraftServer.getSchedulerManager()
                 .buildTask(this::updateAll)
                 .repeat(Duration.ofMillis(TabConfigSection.INSTANCE.current().updateIntervalMs()))
                 .schedule();

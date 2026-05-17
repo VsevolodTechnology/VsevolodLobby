@@ -15,10 +15,10 @@ public class ReloadCommand extends Command {
         this.configManager = configManager;
 
         setCondition((sender, commandString) ->
-                sender instanceof Player p && LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername()));
+                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
 
         setDefaultExecutor((sender, context) -> {
-            if (!(sender instanceof Player p) || !LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername())) {
+            if (!(sender instanceof Player p) || !LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())) {
                 return;
             }
             ConfigManager.ReloadResult result = configManager.reloadAll();

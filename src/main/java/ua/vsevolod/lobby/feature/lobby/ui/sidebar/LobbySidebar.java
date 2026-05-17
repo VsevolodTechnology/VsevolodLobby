@@ -3,6 +3,7 @@ package ua.vsevolod.lobby.feature.lobby.ui.sidebar;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
 import net.minestom.server.scoreboard.Sidebar;
+import net.minestom.server.timer.Task;
 import ua.vsevolod.lobby.config.server.ServerInfo;
 import ua.vsevolod.lobby.config.server.ServerRegistry;
 import ua.vsevolod.lobby.util.Text;
@@ -27,6 +28,9 @@ public final class LobbySidebar {
 
     private final PerViewerSidebar sidebar;
     private final AtomicInteger animationIndex = new AtomicInteger(0);
+
+    private Task animationTask;
+    private Task refreshTask;
 
     /**
      * Last-rendered global-line texts → skip resend if unchanged.
@@ -56,6 +60,17 @@ public final class LobbySidebar {
         this.sidebar = new PerViewerSidebar(Text.c("&#FF9700&lOVERDYN"));
         this.lastEnabledApplied = SidebarConfigSection.INSTANCE.current().enabled();
         buildLayout();
+        SidebarConfigSection.INSTANCE.addChangeListener(this::rescheduleTasks);
+        startAnimationTask();
+        startRefreshTask();
+    }
+
+    private void rescheduleTasks() {
+        if (animationTask != null) animationTask.cancel();
+        if (refreshTask != null) refreshTask.cancel();
+        lastGlobalText.clear();
+        lastPingText.clear();
+        lastTitle = "";
         startAnimationTask();
         startRefreshTask();
     }
@@ -90,7 +105,7 @@ public final class LobbySidebar {
 
     private void startAnimationTask() {
         SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        MinecraftServer.getSchedulerManager()
+        animationTask = MinecraftServer.getSchedulerManager()
                 .buildTask(this::tickAnimation)
                 .repeat(Duration.ofMillis(cfg.titleAnimationIntervalMs()))
                 .schedule();
@@ -98,7 +113,7 @@ public final class LobbySidebar {
 
     private void startRefreshTask() {
         SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        MinecraftServer.getSchedulerManager()
+        refreshTask = MinecraftServer.getSchedulerManager()
                 .buildTask(this::refreshAll)
                 .repeat(Duration.ofMillis(cfg.refreshIntervalMs()))
                 .schedule();

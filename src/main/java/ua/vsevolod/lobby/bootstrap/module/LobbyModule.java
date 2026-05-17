@@ -3,6 +3,8 @@ package ua.vsevolod.lobby.bootstrap.module;
 import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Vec;
+import net.minestom.server.event.server.ServerListPingEvent;
+import net.minestom.server.ping.Status;
 import net.minestom.server.entity.metadata.display.AbstractDisplayMeta;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
 import ua.vsevolod.lobby.bootstrap.server.Module;
@@ -42,6 +44,18 @@ public class LobbyModule implements Module {
         // Render the QR map texture now, not on the first player join. ZXing + Graphics2D
         // would otherwise run inside the LobbyJoinInitializer chain for the first joiner.
         LobbyQrMapService.preinit();
+
+        // Fix: Minestom default sets maxPlayers = onlinePlayers + 1, so at 42 online the MOTD
+        // shows "42/43" — Velocity sees the server as full and stops forwarding new connections.
+        // Override to always show the configured MAX_PLAYERS regardless of current online count.
+        events.addListener(ServerListPingEvent.class, event -> {
+            int online = MinecraftServer.getConnectionManager().getOnlinePlayerCount();
+            int max = LobbyConfig.Settings.MAX_PLAYERS;
+            Status current = event.getStatus();
+            event.setStatus(Status.builder(current)
+                    .playerInfo(online, max)
+                    .build());
+        });
 
         new LobbyTabListManager(events);
         StatsBarService.get().register(events);

@@ -60,7 +60,10 @@ public final class LobbyConfig {
             BYPASS_USERS.add("godes2020");
         }
 
-        public static final String OPS_OWNER = "godes2020";
+        /** Soft cap: new non-bypass players are kicked when online count reaches this value.
+         *  Read from proxy.properties at startup; update via ProxyConfig.load(). */
+        public static volatile int MAX_PLAYERS = 100;
+
         public static final GameMode DEFAULT_GAME_MODE = GameMode.ADVENTURE;
         public static final String IDENTIFIER_VELOCITY_MESSAGE = "vsevolod_lobby_protocol";
         public static final Tag<Integer> IDENTIFIER_CLIENT_PROTOCOL =

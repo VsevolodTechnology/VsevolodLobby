@@ -25,7 +25,7 @@ public final class MenuCommand extends Command {
         this.manager = manager;
 
         setCondition((sender, cmd) ->
-                sender instanceof Player p && LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername()));
+                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
 
         setDefaultExecutor((sender, ctx) -> usage(sender));
 

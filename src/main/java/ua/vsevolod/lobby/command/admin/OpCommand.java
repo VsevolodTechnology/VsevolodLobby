@@ -13,7 +13,7 @@ public class OpCommand extends Command {
         super("op");
 
         setCondition((sender, commandString) ->
-                sender instanceof Player p && LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername()));
+                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
 
         var targetArg = new ArgumentString("target");
 
@@ -24,7 +24,7 @@ public class OpCommand extends Command {
         });
 
         addSyntax((sender, context) -> {
-            if (!(sender instanceof Player p) || !LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername())) {
+            if (!(sender instanceof Player p) || !LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())) {
                 return;
             }
             String target = context.get(targetArg);

@@ -5,6 +5,7 @@ import ua.vsevolod.lobby.feature.admin.config.ConfigSection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class TabConfigSection implements ConfigSection<TabConfig> {
@@ -67,11 +68,16 @@ public final class TabConfigSection implements ConfigSection<TabConfig> {
             """;
 
     private final AtomicReference<TabConfig> current = new AtomicReference<>(DEFAULTS);
+    private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
 
     private TabConfigSection() {}
 
     public TabConfig current() {
         return current.get();
+    }
+
+    public void addChangeListener(Runnable listener) {
+        changeListeners.add(listener);
     }
 
     @Override
@@ -97,6 +103,9 @@ public final class TabConfigSection implements ConfigSection<TabConfig> {
     @Override
     public void apply(TabConfig snapshot) {
         current.set(snapshot);
+        for (Runnable listener : changeListeners) {
+            listener.run();
+        }
     }
 
     private static long asLong(Object o, long fallback) {

@@ -353,4 +353,20 @@ public final class LobbyMusicManager {
             );
         }
     }
+
+    /**
+     * Consolidation target for REC-A (audit 2026-05-17).
+     * Consolidates the 7 UUID-keyed maps into a single record to prevent cleanup-omission bugs by construction.
+     * Migration: replace all Map<UUID, T> with PlayerMusicState fields via atomic compute-if-absent patterns.
+     */
+    record PlayerMusicState(
+            boolean muted,
+            Task activePlaybackTask,
+            Task ambientSuppressorTask,
+            Deque<Track> queue,
+            Track lastPlayedTrack,
+            Track currentTrack,
+            int playbackToken
+    ) {
+    }
 }

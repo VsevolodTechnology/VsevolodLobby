@@ -74,7 +74,9 @@ public final class ProxyOnlineService {
             if (player == null) return;
 
             for (String server : registeredServers) {
-                requestPlayerCount(player, server);
+                // Offload player-count pinging to async to avoid blocking the tick if the
+                // backend doesn't respond quickly.
+                Thread.startVirtualThread(() -> requestPlayerCount(player, server));
             }
 
         }).repeat(TaskSchedule.seconds(5)).schedule();

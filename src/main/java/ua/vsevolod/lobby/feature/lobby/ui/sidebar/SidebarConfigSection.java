@@ -5,6 +5,7 @@ import ua.vsevolod.lobby.feature.admin.config.ConfigSection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class SidebarConfigSection implements ConfigSection<SidebarConfig> {
@@ -83,11 +84,16 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
             """;
 
     private final AtomicReference<SidebarConfig> current = new AtomicReference<>(DEFAULTS);
+    private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
 
     private SidebarConfigSection() {}
 
     public SidebarConfig current() {
         return current.get();
+    }
+
+    public void addChangeListener(Runnable listener) {
+        changeListeners.add(listener);
     }
 
     @Override
@@ -133,6 +139,9 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
     @Override
     public void apply(SidebarConfig snapshot) {
         current.set(snapshot);
+        for (Runnable listener : changeListeners) {
+            listener.run();
+        }
     }
 
     private static long asLong(Object o, long fallback) {

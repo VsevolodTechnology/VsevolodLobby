@@ -13,7 +13,7 @@ public class DeopCommand extends Command {
         super("deop");
 
         setCondition((sender, commandString) ->
-                sender instanceof Player p && LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername()));
+                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
 
         var targetArg = new ArgumentString("target");
 
@@ -24,16 +24,12 @@ public class DeopCommand extends Command {
         });
 
         addSyntax((sender, context) -> {
-            if (!(sender instanceof Player p) || !LobbyConfig.Settings.OPS_OWNER.equals(p.getUsername())) {
+            if (!(sender instanceof Player p) || !LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())) {
                 return;
             }
             String target = context.get(targetArg);
             if (target == null || target.isBlank()) {
                 p.sendMessage("§cНик не указан.");
-                return;
-            }
-            if (LobbyConfig.Settings.OPS_OWNER.equals(target)) {
-                p.sendMessage("§cНельзя снять права с владельца.");
                 return;
             }
             if (!LobbyConfig.Settings.BYPASS_USERS.contains(target)) {

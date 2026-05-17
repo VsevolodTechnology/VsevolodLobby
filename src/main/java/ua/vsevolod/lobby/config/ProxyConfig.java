@@ -71,6 +71,12 @@ public final class ProxyConfig {
         } catch (NumberFormatException e) {
             port = LobbyConfig.Settings.HOST_PORT;
         }
+        try {
+            LobbyConfig.Settings.MAX_PLAYERS = Integer.parseInt(
+                    props.getProperty("max-players", String.valueOf(LobbyConfig.Settings.MAX_PLAYERS)).trim());
+        } catch (NumberFormatException e) {
+            System.err.println("[ProxyConfig] Invalid max-players value, using default: " + LobbyConfig.Settings.MAX_PLAYERS);
+        }
         return new ProxyConfig(secret, address, port);
     }
 
@@ -99,6 +105,11 @@ public final class ProxyConfig {
                 # Bind port. Should match the port you configured in velocity.toml under
                 # the [servers] section for this backend (e.g. `lobby = "127.0.0.1:25566"`).
                 host.port=25565
+
+                # Maximum number of players allowed on the server simultaneously.
+                # Players in BYPASS_USERS (ops) are never blocked regardless of this limit.
+                # Shown in the server list MOTD. Requires restart to apply.
+                max-players=100
                 """;
         try {
             Files.writeString(FILE, template, StandardCharsets.UTF_8);
