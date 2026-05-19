@@ -1,12 +1,11 @@
 package ua.vsevolod.lobby.bootstrap.module;
 
-import net.kyori.adventure.text.Component;
 import net.minestom.server.MinecraftServer;
-import net.minestom.server.coordinate.Vec;
 import net.minestom.server.event.server.ServerListPingEvent;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import net.minestom.server.ping.Status;
-import net.minestom.server.entity.metadata.display.AbstractDisplayMeta;
-import net.minestom.server.entity.metadata.display.TextDisplayMeta;
 import ua.vsevolod.lobby.bootstrap.server.Module;
 import ua.vsevolod.lobby.bootstrap.server.ProxyOnlineService;
 import ua.vsevolod.lobby.command.admin.MenuCommand;
@@ -20,19 +19,17 @@ import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcActionExecutor;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
 import ua.vsevolod.lobby.feature.lobby.interaction.qr.LobbyQrMapService;
+import ua.vsevolod.lobby.feature.lobby.ui.hologram.HologramManager;
+import ua.vsevolod.lobby.feature.lobby.ui.hologram.config.HologramsConfigSection;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.MenuManager;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
-import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologram;
-import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologramBuilder;
-import ua.vsevolod.lobby.feature.lobby.ui.hologram.TextHologramStyle;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.LobbyModeSelectorMenu;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.LobbySidebar;
 import ua.vsevolod.lobby.feature.lobby.ui.tab.LobbyTabListManager;
-import ua.vsevolod.lobby.util.Text;
 
 public class LobbyModule implements Module {
 
-    public static TextHologram holo;
+    public static HologramManager hologramManager;
     public static NpcManager npcManager;
     public static NpcActionExecutor npcActionExecutor;
     public static MenuManager menuManager;
@@ -75,8 +72,27 @@ public class LobbyModule implements Module {
         // On /reload, close all open menus so viewers don't see stale items.
         MenusConfigSection.INSTANCE.addListener(cfg -> menuManager.closeAll());
 
-        // `open-menu <id>` action: try the config-driven MenuManager first; fall back to the
-        // legacy hardcoded mode-selector for backwards compatibility.
+        // [menu] <id> — open config-driven menu, fall back to legacy hardcoded mode-selector
+        npcActionExecutor.registerPrefix("menu", (player, id) -> {
+            if (!menuManager.openFor(player, id)) {
+                if ("mode-selector".equals(id)) {
+                    player.openInventory(menu.getMenu());
+                }
+            }
+        });
+        // [connect] <server> — cross-server transfer via BungeeCord plugin messaging
+        npcActionExecutor.registerPrefix("connect", (player, server) -> {
+            try {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                DataOutputStream out = new DataOutputStream(bytes);
+                out.writeUTF("Connect");
+                out.writeUTF(server);
+                player.sendPluginMessage("bungeecord:main", bytes.toByteArray());
+            } catch (java.io.IOException e) {
+                System.err.println("[connect] Failed to transfer " + player.getUsername() + " to " + server + ": " + e.getMessage());
+            }
+        });
+        // Legacy action-type registry entries (used by join-items)
         npcActionExecutor.register("open-menu", (player, action) -> {
             if (!menuManager.openFor(player, action.target())) {
                 if ("mode-selector".equals(action.target())) {
@@ -84,12 +100,18 @@ public class LobbyModule implements Module {
                 }
             }
         });
-        // `transfer-server` stub — Phase 4. Real cross-backend transfer arrives later together
-        // with Velocity plugin-channel wiring; for now we just chat the destination at the player.
-        npcActionExecutor.register("transfer-server", (player, action) ->
-                player.sendMessage("§7Подключение к §f" + action.target() + "§7... (transfer не реализован)"));
-        // parkour-start handler is wired later inside LobbyEventRegistrar because it depends on
-        // LobbyParkourService which is constructed there.
+        npcActionExecutor.register("transfer-server", (player, action) -> {
+            try {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                DataOutputStream out = new DataOutputStream(bytes);
+                out.writeUTF("Connect");
+                out.writeUTF(action.target());
+                player.sendPluginMessage("bungeecord:main", bytes.toByteArray());
+            } catch (java.io.IOException e) {
+                System.err.println("[transfer-server] Failed to transfer " + player.getUsername() + ": " + e.getMessage());
+            }
+        });
+        // [parkour] / parkour-start — wired later inside LobbyEventRegistrar
 
         npcManager = new NpcManager(InstanceModule.lobby);
         NpcConfigSection.INSTANCE.addListener(npcManager::onConfigApplied);
@@ -97,23 +119,9 @@ public class LobbyModule implements Module {
         new NpcCommand(npcManager);
         new MenuCommand(menuManager);
 
-        // Legacy parkour hologram — still built here because Phase 2 only adapter-fed NPCs to config;
-        // hologram-per-NPC coupling is Phase 5 polish per ROADMAP.
-        holo = new TextHologramBuilder(LobbyConfig.Parkour.NPC_POS.withY(LobbyConfig.Parkour.NPC_POS.y() + 2.2))
-                .line(Text.c("&#F1BB58&lП&#F1B958&lА&#F1B658&lР&#F1B458&lК&#F1B158&lУ&#F1AF58&lР").appendNewline()
-                                .append(Component.text("Проверь свою реакцию, точность и контроль", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
-                                .appendNewline()
-                                .append(Component.text("можешь дойти до конца и не упасть?", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)),
-                        TextHologramStyle.defaults()
-                                .backgroundColor(0x1C1C1E)
-                                .useDefaultBackground(true)
-                                .billboard(AbstractDisplayMeta.BillboardConstraints.FIXED)
-                                .alignment(TextDisplayMeta.Alignment.CENTER)
-                                .scale(new Vec(0.8, 0.8, 0.8))
-                                .shadow(true)
-                                .seeThrough(true)
-                )
-                .build();
+        hologramManager = new HologramManager();
+        hologramManager.onConfigApplied(HologramsConfigSection.INSTANCE.current());
+        HologramsConfigSection.INSTANCE.addListener(hologramManager::onConfigApplied);
 
         new LobbyEventRegistrar(events, InstanceModule.lobby, npcManager, npcActionExecutor, sidebar, menu);
     }

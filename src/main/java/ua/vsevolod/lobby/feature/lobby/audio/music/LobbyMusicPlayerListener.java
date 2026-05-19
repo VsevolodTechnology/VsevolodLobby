@@ -5,18 +5,20 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.minestom.server.entity.PlayerHand;
 import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.item.ItemDropEvent;
 import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistration;
-
 public final class LobbyMusicPlayerListener implements LobbyEventRegistration {
 
     private final LobbyMusicManager music;
+    private final LobbyMusicSelectorMenu selectorMenu;
 
-    public LobbyMusicPlayerListener(LobbyMusicManager lobbyMusicManager) {
+    public LobbyMusicPlayerListener(LobbyMusicManager lobbyMusicManager, LobbyMusicSelectorMenu selectorMenu) {
         this.music = lobbyMusicManager;
+        this.selectorMenu = selectorMenu;
     }
 
     @Override
@@ -42,6 +44,15 @@ public final class LobbyMusicPlayerListener implements LobbyEventRegistration {
 
             int slot = player.getHeldSlot();
             player.getInventory().setItemStack(slot, LobbyMusicManager.getMusicToggle(enabled));
+        });
+
+        // Q key: open music selector menu
+        handler.addListener(ItemDropEvent.class, event -> {
+            ItemStack item = event.getItemStack();
+            if (item.material() != Material.MUSIC_DISC_CAT && item.material() != Material.MUSIC_DISC_BLOCKS) return;
+            if (!item.hasTag(LobbyMusicManager.MUSIC_TAG)) return;
+            event.setCancelled(true);
+            selectorMenu.open(event.getPlayer());
         });
     }
 

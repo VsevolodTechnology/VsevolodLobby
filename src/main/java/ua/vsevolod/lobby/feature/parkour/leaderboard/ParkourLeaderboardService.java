@@ -5,7 +5,9 @@ import ua.vsevolod.lobby.config.LobbyConfig;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -16,10 +18,11 @@ public final class ParkourLeaderboardService {
     private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
 
     private List<ParkourLeaderboardEntry> entries = List.of();
+    private Map<UUID, ParkourLeaderboardEntry> entryByUuid = new HashMap<>();
 
     public ParkourLeaderboardService(ParkourLeaderboardStore store) {
         this.store = store;
-        this.entries = store.loadEntries();
+        replaceEntries(store.loadEntries());
     }
 
     public void startAutoRefresh() {
@@ -45,17 +48,12 @@ public final class ParkourLeaderboardService {
     }
 
     public synchronized int bestScore(UUID playerUuid) {
-        return entries.stream()
-                .filter(entry -> entry.playerUuid().equals(playerUuid))
-                .findFirst()
-                .map(ParkourLeaderboardEntry::score)
-                .orElse(0);
+        ParkourLeaderboardEntry e = entryByUuid.get(playerUuid);
+        return e != null ? e.score() : 0;
     }
 
     public synchronized Optional<ParkourLeaderboardEntry> bestEntry(UUID playerUuid) {
-        return entries.stream()
-                .filter(entry -> entry.playerUuid().equals(playerUuid))
-                .findFirst();
+        return Optional.ofNullable(entryByUuid.get(playerUuid));
     }
 
     public synchronized List<ParkourLeaderboardEntry> topEntries(int limit) {
@@ -82,6 +80,11 @@ public final class ParkourLeaderboardService {
         }
 
         entries = normalized;
+        Map<UUID, ParkourLeaderboardEntry> index = new HashMap<>(normalized.size());
+        for (ParkourLeaderboardEntry e : normalized) {
+            index.put(e.playerUuid(), e);
+        }
+        entryByUuid = index;
         notifyListeners();
     }
 

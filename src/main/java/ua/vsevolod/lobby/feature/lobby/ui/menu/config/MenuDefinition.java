@@ -1,29 +1,38 @@
 package ua.vsevolod.lobby.feature.lobby.ui.menu.config;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
+/**
+ * Snapshot of a single chest menu configuration (DeluxeMenus-style).
+ *
+ * <p>{@link #size} is the total number of inventory slots (rows × 9, e.g. 5 rows = 45).
+ * Decoration items are just regular {@link MenuItem} entries with multiple {@code slots}.</p>
+ */
 public record MenuDefinition(
         String id,
-        String title,
-        int rows,
+        String menuTitle,
+        int size,
+        String openCommand,
         Visibility visibility,
-        Map<String, MenuDecor> decor,
-        List<MenuItem> items
+        Map<String, MenuItem> items
 ) {
     public MenuDefinition {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("menu id required");
-        if (rows < 1 || rows > 6) throw new IllegalArgumentException("rows must be 1..6");
+        if (size < 9 || size > 54 || size % 9 != 0)
+            throw new IllegalArgumentException("size must be 9–54 and divisible by 9 (rows * 9)");
         if (visibility == null) visibility = Visibility.ALL;
-        if (decor == null) decor = Map.of();
-        else decor = Map.copyOf(decor);
-        if (items == null) items = List.of();
-        else items = List.copyOf(items);
+        if (items == null) items = Map.of();
+        else items = Map.copyOf(items);
+    }
+
+    /** Rows derived from size (e.g. size=45 → 5 rows). */
+    public int rows() {
+        return size / 9;
     }
 
     public MenuDefinition withVisibility(Visibility v) {
-        return new MenuDefinition(id, title, rows, v, new LinkedHashMap<>(decor), items);
+        return new MenuDefinition(id, menuTitle, size, openCommand, v, new LinkedHashMap<>(items));
     }
 
     public enum Visibility {

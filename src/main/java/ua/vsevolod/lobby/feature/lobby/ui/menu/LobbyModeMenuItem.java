@@ -19,11 +19,16 @@ public final class LobbyModeMenuItem {
     public static final Tag<Byte> MENU_ITEM_TAG = Tag.Byte("lobby-menu-opener");
 
     private static final Component SPACE_PREFIX = Component.text(" - ", NamedTextColor.GRAY);
+    private static final ItemStack CACHED_ITEM = buildItem();
 
     private LobbyModeMenuItem() {
     }
 
     public static ItemStack create() {
+        return CACHED_ITEM;
+    }
+
+    private static ItemStack buildItem() {
         List<Component> lore = Stream.<Component>of(
                         Component.empty(),
                         Component.text(" «Информация»", TextColor.color(0x65D1FC)),

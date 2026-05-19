@@ -4,93 +4,74 @@ import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.instance.block.Block;
 
-import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Picks the next parkour block. Every pattern in here is reachable with vanilla movement —
- * no slabs, no fence-corners, no slow-falling, no 2-up jumps.
- *
- * <h3>Vanilla jump reference (the box we must stay inside)</h3>
- * <ul>
- *   <li>Sprint flat: up to <b>4 blocks</b> forward (sqrt(dx²+dz²) ≤ 4.0)</li>
- *   <li>Sprint +1 up: up to <b>3 blocks</b> forward (sqrt(dx²+dz²) ≤ 3.0 — strict)</li>
- *   <li>+2 up: <b>impossible</b> from a single-block jump</li>
- *   <li>Drops (negative dy): extend horizontal reach by ~1 per block dropped</li>
- *   <li>Diagonals (|dx| = 2) work flat or with -1 dy; <b>impossible</b> with +1 dy</li>
- *   <li>|dx| ≥ 3 needs the full 4-block straight budget; only safe with dz ≤ 2</li>
- * </ul>
- *
- * <h3>Why this matters</h3>
- * <p>Prior pattern lists contained 2-up stair jumps and 4-forward + 1-up diagonals — both
- * physically impossible without sprint+sneak edge tricks the average player doesn't know.
- * Players hit those and the run silently ended. Every pattern below was checked against
- * the vanilla budget.</p>
- */
 public final class ParkourGenerator {
 
-    /** Warm-up. Short flat hops, no height change. */
-    private static final List<JumpPattern> EASY = List.of(
-            new JumpPattern( 0, 0, 2, ParkourDifficulty.EASY),
-            new JumpPattern( 1, 0, 2, ParkourDifficulty.EASY),
-            new JumpPattern(-1, 0, 2, ParkourDifficulty.EASY),
-            new JumpPattern( 0, 0, 3, ParkourDifficulty.EASY),
-            new JumpPattern( 1, 0, 3, ParkourDifficulty.EASY),
-            new JumpPattern(-1, 0, 3, ParkourDifficulty.EASY)
-    );
-
-    /** Sprint distances and gentle +1 / -1 stairs. */
-    private static final List<JumpPattern> MEDIUM = List.of(
-            new JumpPattern( 0, 1, 2, ParkourDifficulty.MEDIUM),   // up 1
-            new JumpPattern( 1, 1, 2, ParkourDifficulty.MEDIUM),   // up 1, side 1
-            new JumpPattern(-1, 1, 2, ParkourDifficulty.MEDIUM),
-            new JumpPattern( 0, 1, 3, ParkourDifficulty.MEDIUM),   // sprint+1 up; |dx²+dz²|=9, edge of allowed
-            new JumpPattern( 2, 0, 2, ParkourDifficulty.MEDIUM),   // diagonal flat (√8)
-            new JumpPattern(-2, 0, 2, ParkourDifficulty.MEDIUM),
-            new JumpPattern( 0, -1, 3, ParkourDifficulty.MEDIUM),  // drop 1
-            new JumpPattern( 1, -1, 3, ParkourDifficulty.MEDIUM),
-            new JumpPattern(-1, -1, 3, ParkourDifficulty.MEDIUM)
-    );
-
-    /** Long sprint jumps. Still inside vanilla. */
-    private static final List<JumpPattern> HARD = List.of(
-            new JumpPattern( 0, 0, 4, ParkourDifficulty.HARD),     // sprint flat max
-            new JumpPattern( 1, 0, 3, ParkourDifficulty.HARD),     // diagonal flat (√10)
-            new JumpPattern(-1, 0, 3, ParkourDifficulty.HARD),
-            new JumpPattern( 2, 0, 3, ParkourDifficulty.HARD),     // diagonal long flat (√13)
-            new JumpPattern(-2, 0, 3, ParkourDifficulty.HARD),
-            new JumpPattern( 0, -1, 4, ParkourDifficulty.HARD),    // drop 1 + sprint
-            new JumpPattern( 1, -1, 4, ParkourDifficulty.HARD),
-            new JumpPattern(-1, -1, 4, ParkourDifficulty.HARD),
-            new JumpPattern( 2, -1, 3, ParkourDifficulty.HARD),    // drop 1 + diagonal long
-            new JumpPattern(-2, -1, 3, ParkourDifficulty.HARD)
-    );
-
-    /** Drops, max-reach diagonals — possible but unforgiving. */
-    private static final List<JumpPattern> EXTREME = List.of(
-            new JumpPattern( 0, -2, 4, ParkourDifficulty.EXTREME), // big drop + sprint
-            new JumpPattern( 1, -2, 4, ParkourDifficulty.EXTREME),
-            new JumpPattern(-1, -2, 4, ParkourDifficulty.EXTREME),
-            new JumpPattern( 2, -2, 3, ParkourDifficulty.EXTREME), // big drop + diagonal long
-            new JumpPattern(-2, -2, 3, ParkourDifficulty.EXTREME),
-            new JumpPattern( 3, 0, 1, ParkourDifficulty.EXTREME),  // wide side step (√10), no fwd height
-            new JumpPattern(-3, 0, 1, ParkourDifficulty.EXTREME)
-    );
+    private static final int CHUNK_SAFE_MIN = 2;
+    private static final int CHUNK_SAFE_MAX = 13;
+    private static final int MAX_BLOCK_Y = 200;
+    private static final int MIN_BLOCK_Y = 64;
 
     private final ParkourTheme theme;
+    private final ParkourDifficulty difficulty;
+    private int facing = 0;
+    private boolean ascending = true;
 
-    public ParkourGenerator(ParkourTheme theme) {
+    public ParkourGenerator(ParkourTheme theme, ParkourDifficulty difficulty) {
         this.theme = theme;
+        this.difficulty = difficulty;
     }
 
     public Point next(Point from, int score) {
-        JumpPattern pattern = pickPattern(score);
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        int dist = difficulty.forwardDistance();
 
-        return new Pos(
-                from.blockX() + pattern.dx(),
-                Math.max(64, from.blockY() + pattern.dy()),
-                from.blockZ() + pattern.dz()
-        );
+        int chunkBaseX = Math.floorDiv(from.blockX(), 16) * 16;
+        int chunkBaseZ = Math.floorDiv(from.blockZ(), 16) * 16;
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            int[] fwd = forwardDelta(facing, dist);
+            if (inBounds(from.blockX() + fwd[0] - chunkBaseX,
+                         from.blockZ() + fwd[2] - chunkBaseZ)) break;
+            facing = (facing + 1) % 4;
+        }
+
+        int[] fwd = forwardDelta(facing, dist);
+
+        int currentY = from.blockY();
+        if (currentY >= MAX_BLOCK_Y) ascending = false;
+        else if (currentY <= MIN_BLOCK_Y) ascending = true;
+
+        int maxH = difficulty.maxHeightDelta();
+        int dy;
+        if (maxH == 0) {
+            dy = 0;
+        } else {
+            if (ascending) {
+                dy = rand.nextBoolean() ? 0 : 1;
+            } else {
+                dy = rand.nextBoolean() ? 0 : -1;
+            }
+        }
+        int ny = currentY + dy;
+
+        int maxSide = difficulty.maxSideOffset();
+        int sideDelta = maxSide == 0 ? 0 : rand.nextInt(2 * maxSide + 1) - maxSide;
+        int nx = from.blockX() + fwd[0] + sideDelta * sideX(facing);
+        int nz = from.blockZ() + fwd[2] + sideDelta * sideZ(facing);
+
+        if (!inBounds(nx - chunkBaseX, nz - chunkBaseZ)) {
+            sideDelta = -sideDelta;
+            nx = from.blockX() + fwd[0] + sideDelta * sideX(facing);
+            nz = from.blockZ() + fwd[2] + sideDelta * sideZ(facing);
+            if (!inBounds(nx - chunkBaseX, nz - chunkBaseZ)) {
+                nx = from.blockX() + fwd[0];
+                nz = from.blockZ() + fwd[2];
+            }
+        }
+
+        return new Pos(nx, ny, nz);
     }
 
     public Block randomBlock() {
@@ -101,31 +82,26 @@ public final class ParkourGenerator {
         return theme;
     }
 
-    private JumpPattern pickPattern(int score) {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        List<JumpPattern> pool = poolFor(score, random);
-        return pool.get(random.nextInt(pool.size()));
+    private static int[] forwardDelta(int facing, int dist) {
+        return switch (facing) {
+            case 0 -> new int[]{ 0, 0,  dist};
+            case 1 -> new int[]{ dist, 0,  0};
+            case 2 -> new int[]{ 0, 0, -dist};
+            case 3 -> new int[]{-dist, 0,  0};
+            default -> new int[]{ 0, 0,  dist};
+        };
     }
 
-    private static List<JumpPattern> poolFor(int score, ThreadLocalRandom random) {
-        if (score <= 2) return EASY;
-        if (score <= 7)  return random.nextInt(10) < 6 ? EASY : MEDIUM;
-        if (score <= 15) {
-            int r = random.nextInt(10);
-            if (r < 2) return EASY;
-            if (r < 8) return MEDIUM;
-            return HARD;
-        }
-        if (score <= 25) {
-            int r = random.nextInt(10);
-            if (r < 1) return EASY;
-            if (r < 6) return MEDIUM;
-            return HARD;
-        }
-        // score >= 26
-        int r = random.nextInt(10);
-        if (r < 4) return MEDIUM;
-        if (r < 8) return HARD;
-        return EXTREME;
+    private static int sideX(int facing) {
+        return (facing == 0 || facing == 2) ? 1 : 0;
+    }
+
+    private static int sideZ(int facing) {
+        return (facing == 1 || facing == 3) ? 1 : 0;
+    }
+
+    private static boolean inBounds(int localX, int localZ) {
+        return localX >= CHUNK_SAFE_MIN && localX <= CHUNK_SAFE_MAX
+                && localZ >= CHUNK_SAFE_MIN && localZ <= CHUNK_SAFE_MAX;
     }
 }

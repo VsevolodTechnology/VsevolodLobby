@@ -5,34 +5,53 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.event.Event;
 import net.minestom.server.event.EventNode;
 import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.player.PlayerDisconnectEvent;
 import net.minestom.server.instance.Instance;
+import net.minestom.server.potion.PotionEffect;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicManager;
+import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicSelectorMenu;
 import ua.vsevolod.lobby.feature.lobby.player.join.LobbyJoinInitializer;
 import ua.vsevolod.lobby.feature.parkour.ParkourCommand;
+import ua.vsevolod.lobby.feature.parkour.ParkourDifficulty;
 import ua.vsevolod.lobby.feature.parkour.ParkourListener;
 import ua.vsevolod.lobby.feature.parkour.ParkourService;
+import ua.vsevolod.lobby.feature.parkour.ParkourSettingsMenu;
+import ua.vsevolod.lobby.feature.parkour.ParkourSoundPreset;
+import ua.vsevolod.lobby.feature.parkour.ParkourTheme;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardService;
+import net.minestom.server.registry.RegistryKey;
+import net.minestom.server.world.DimensionType;
 
 public final class LobbyParkourService {
 
     private final Instance lobbyInstance;
     private final LobbyJoinInitializer joinInitializer;
     private final ParkourService parkourService;
+    private final ParkourSettingsMenu settingsMenu;
 
     public LobbyParkourService(
             Instance lobbyInstance,
             LobbyJoinInitializer joinInitializer,
-            ParkourLeaderboardService leaderboardService
+            ParkourLeaderboardService leaderboardService,
+            LobbyMusicManager musicManager,
+            LobbyMusicSelectorMenu musicSelectorMenu
     ) {
         this.lobbyInstance = lobbyInstance;
         this.joinInitializer = joinInitializer;
         this.parkourService = new ParkourService(leaderboardService);
+        this.settingsMenu = new ParkourSettingsMenu(parkourService,
+                musicManager::toggle, musicSelectorMenu::open, this::returnToLobby, musicManager::isEnabled);
     }
 
     public void register(GlobalEventHandler events) {
         EventNode<Event> parkourNode = EventNode.all("parkour");
         new ParkourListener(parkourService, this::returnToLobby).register(parkourNode);
+        settingsMenu.register(parkourNode);
         events.addChild(parkourNode);
+
+        events.addListener(PlayerDisconnectEvent.class, event ->
+                settingsMenu.evict(event.getPlayer().getUuid()));
 
         MinecraftServer.getCommandManager().register(new ParkourCommand(this::toggle));
     }
@@ -59,14 +78,26 @@ public final class LobbyParkourService {
             return;
         }
 
+        ParkourDifficulty difficulty = settingsMenu.getDifficulty(player.getUuid());
+        ParkourTheme theme = settingsMenu.getTheme(player.getUuid());
+        RegistryKey<DimensionType> dimension = settingsMenu.getDimension(player.getUuid());
+        boolean training = settingsMenu.isTrainingMode(player.getUuid());
+        ParkourSoundPreset sound = settingsMenu.getSoundPreset(player.getUuid());
+
         joinInitializer.leave(player, false);
         player.closeInventory();
-        parkourService.start(player);
+        parkourService.startWithDimension(player, difficulty, theme, dimension, training, sound);
     }
 
     public void returnToLobby(Player player) {
         parkourService.stop(player);
+        player.removeEffect(PotionEffect.NIGHT_VISION);
         player.closeInventory();
+
+        if (player.getInstance() == lobbyInstance) {
+            joinInitializer.restore(player);
+            return;
+        }
 
         player.setInstance(lobbyInstance, LobbyConfig.Locations.SPAWN_POS_PLAYER)
                 .thenRun(() -> {

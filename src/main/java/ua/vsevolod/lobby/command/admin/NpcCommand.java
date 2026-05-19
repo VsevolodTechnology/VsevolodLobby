@@ -10,7 +10,6 @@ import net.minestom.server.command.builder.suggestion.SuggestionEntry;
 import net.minestom.server.entity.Player;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcManager;
-import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcAction;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcDefinition;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcPosition;
 
@@ -31,17 +30,17 @@ public final class NpcCommand extends Command {
 
         setDefaultExecutor((sender, ctx) -> usage(sender));
 
-        ArgumentLiteral listArg = new ArgumentLiteral("list");
-        ArgumentLiteral addArg = new ArgumentLiteral("add");
-        ArgumentLiteral removeArg = new ArgumentLiteral("remove");
-        ArgumentLiteral moveArg = new ArgumentLiteral("move");
-        ArgumentLiteral setnameArg = new ArgumentLiteral("setname");
-        ArgumentLiteral setdescArg = new ArgumentLiteral("setdesc");
-        ArgumentLiteral setskinArg = new ArgumentLiteral("setskin");
-        ArgumentLiteral setglowArg = new ArgumentLiteral("setglow");
+        ArgumentLiteral listArg       = new ArgumentLiteral("list");
+        ArgumentLiteral addArg        = new ArgumentLiteral("add");
+        ArgumentLiteral removeArg     = new ArgumentLiteral("remove");
+        ArgumentLiteral moveArg       = new ArgumentLiteral("move");
+        ArgumentLiteral setnameArg    = new ArgumentLiteral("setname");
+        ArgumentLiteral setdescArg    = new ArgumentLiteral("setdesc");
+        ArgumentLiteral setskinArg    = new ArgumentLiteral("setskin");
+        ArgumentLiteral setglowArg    = new ArgumentLiteral("setglow");
         ArgumentLiteral setglowcolorArg = new ArgumentLiteral("setglowcolor");
         ArgumentLiteral setvisibleArg = new ArgumentLiteral("setvisible");
-        ArgumentLiteral setactionArg = new ArgumentLiteral("setaction");
+        ArgumentLiteral setactionArg  = new ArgumentLiteral("setaction");
 
         ArgumentString idArg = ArgumentType.String("id");
         ArgumentString existingIdArg = ArgumentType.String("id");
@@ -50,7 +49,7 @@ public final class NpcCommand extends Command {
         });
         ArgumentStringArray restArg = ArgumentType.StringArray("rest");
         ArgumentLiteral sideRight = new ArgumentLiteral("right");
-        ArgumentLiteral sideLeft = new ArgumentLiteral("left");
+        ArgumentLiteral sideLeft  = new ArgumentLiteral("left");
 
         addSyntax((sender, ctx) -> list(sender), listArg);
         addSyntax((sender, ctx) -> add(sender, ctx.get(idArg)), addArg, idArg);
@@ -80,39 +79,36 @@ public final class NpcCommand extends Command {
         if (!(sender instanceof Player p)) return;
         p.sendMessage("§6=== /npc ===");
         p.sendMessage("§e/npc list");
-        p.sendMessage("§e/npc add <id> §7— спавнит на твоей позиции");
+        p.sendMessage("§e/npc add <id> §7— создаёт NPC на твоей позиции");
         p.sendMessage("§e/npc remove <id>");
-        p.sendMessage("§e/npc move <id> §7— перемещает на твою позицию");
+        p.sendMessage("§e/npc move <id> §7— переносит на твою позицию");
         p.sendMessage("§e/npc setname <id> <текст | none>");
         p.sendMessage("§e/npc setdesc <id> <текст | none>");
-        p.sendMessage("§e/npc setskin <id> <ник | none>");
+        p.sendMessage("§e/npc setskin <id> <ник | url:https://... | none>");
         p.sendMessage("§e/npc setglow <id> <true|false>");
         p.sendMessage("§e/npc setglowcolor <id> <white|red|gold|aqua|… | none>");
         p.sendMessage("§e/npc setvisible <id> <true|false>");
-        p.sendMessage("§e/npc setaction <id> <right|left> <none|run-command|open-menu|parkour-start> [target] [as-op]");
+        p.sendMessage("§e/npc setaction <id> <right|left> <[prefix] команда ...>");
+        p.sendMessage("§7  Пример: /npc setaction mob right [menu] mode-selector");
+        p.sendMessage("§7  Пример: /npc setaction mob right [player] server adventure");
+        p.sendMessage("§7  Несколько команд — используй /reload и редактируй npcs.yml напрямую");
     }
 
     private void list(net.minestom.server.command.CommandSender sender) {
         if (!(sender instanceof Player p)) return;
         List<NpcDefinition> all = manager.all();
-        if (all.isEmpty()) {
-            p.sendMessage("§7NPC нет.");
-            return;
-        }
+        if (all.isEmpty()) { p.sendMessage("§7NPC нет."); return; }
         p.sendMessage("§6=== NPC (" + all.size() + ") ===");
         for (NpcDefinition d : all) {
             p.sendMessage(String.format(
                     "§e%s §7@ §f%.1f §7/ §f%.1f §7/ §f%.1f §7| name=§f%s §7skin=§f%s",
                     d.id(), d.position().x(), d.position().y(), d.position().z(),
                     d.name() == null ? "—" : d.name(),
-                    d.skin() == null ? "—" : d.skin()
-            ));
-            p.sendMessage(String.format("§7  right: §f%s§7 → §f%s%s",
-                    d.rightAction().type(), d.rightAction().target(),
-                    d.rightAction().executeAsOp() ? " §c(as op)" : ""));
-            p.sendMessage(String.format("§7  left:  §f%s§7 → §f%s%s",
-                    d.leftAction().type(), d.leftAction().target(),
-                    d.leftAction().executeAsOp() ? " §c(as op)" : ""));
+                    d.skin() == null ? "—" : d.skin()));
+            if (!d.rightClickCommands().isEmpty())
+                p.sendMessage("§7  right: §f" + String.join("§7, §f", d.rightClickCommands()));
+            if (!d.leftClickCommands().isEmpty())
+                p.sendMessage("§7  left:  §f" + String.join("§7, §f", d.leftClickCommands()));
         }
     }
 
@@ -123,10 +119,9 @@ public final class NpcCommand extends Command {
             return;
         }
         NpcDefinition def = new NpcDefinition(
-                id,
-                NpcPosition.from(p.getPosition()),
+                id, NpcPosition.from(p.getPosition()),
                 null, null, null, false, null, true,
-                NpcAction.NONE, NpcAction.NONE
+                List.of(), List.of()
         );
         applyEdit(p, "добавлен", appended(def));
     }
@@ -182,7 +177,7 @@ public final class NpcCommand extends Command {
         if (existing.isEmpty()) { p.sendMessage("§cNPC '" + id + "' не найден."); return; }
         String trimmed = value.trim();
         String color = "none".equalsIgnoreCase(trimmed) || trimmed.isEmpty() ? null : trimmed.toLowerCase();
-        applyEdit(p, "glow-color=" + (color == null ? "none" : color), replace(existing.get().withGlowColor(color)));
+        applyEdit(p, "glow_color=" + (color == null ? "none" : color), replace(existing.get().withGlowColor(color)));
     }
 
     private void setVisible(net.minestom.server.command.CommandSender sender, String id, String value) {
@@ -194,44 +189,36 @@ public final class NpcCommand extends Command {
     }
 
     /**
-     * Parses {@code <type> [target] [as-op]} from {@code rest}.
+     * Sets a SINGLE command for the given click side.
+     * To set multiple commands, edit npcs.yml directly and use /reload.
+     *
      * Examples:
-     *   none
-     *   run-command spawn
-     *   run-command /spawn as-op
-     *   open-menu mode-selector
-     *   parkour-start
+     *   /npc setaction mob-id right [menu] mode-selector
+     *   /npc setaction mob-id right [player] server adventure
+     *   /npc setaction mob-id right [connect] lobby
+     *   /npc setaction mob-id left [message] &aПривет!
+     *   /npc setaction mob-id right none   ← clears the action
      */
     private void setAction(net.minestom.server.command.CommandSender sender, String id, String side, String rest) {
         if (!(sender instanceof Player p)) return;
         Optional<NpcDefinition> existing = manager.findById(id);
         if (existing.isEmpty()) { p.sendMessage("§cNPC '" + id + "' не найден."); return; }
 
-        String[] tokens = rest.trim().split("\\s+");
-        if (tokens.length == 0 || tokens[0].isBlank()) {
-            p.sendMessage("§c/npc setaction <id> " + side + " <type> [target] [as-op]");
+        String trimmed = rest.trim();
+        if (trimmed.isBlank()) {
+            p.sendMessage("§c/npc setaction <id> " + side + " <[prefix] команда | none>");
             return;
         }
-        String type = tokens[0].toLowerCase();
-        boolean asOp = tokens[tokens.length - 1].equalsIgnoreCase("as-op");
-        String target = "";
-        int targetEnd = asOp ? tokens.length - 1 : tokens.length;
-        if (targetEnd > 1) {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 1; i < targetEnd; i++) {
-                if (i > 1) sb.append(' ');
-                sb.append(tokens[i]);
-            }
-            target = sb.toString();
-        }
 
-        NpcAction action = "none".equals(type) ? NpcAction.NONE : new NpcAction(type, target, asOp);
+        List<String> commands = "none".equalsIgnoreCase(trimmed) ? List.of() : List.of(trimmed);
         NpcDefinition d = existing.get();
-        NpcDefinition next = "right".equals(side) ? d.withRightAction(action) : d.withLeftAction(action);
-        applyEdit(p, side + "-click → " + type, replace(next));
+        NpcDefinition next = "right".equals(side)
+                ? d.withRightClickCommands(commands)
+                : d.withLeftClickCommands(commands);
+        applyEdit(p, side + "-click → " + (commands.isEmpty() ? "none" : trimmed), replace(next));
     }
 
-    // --- list-mutation helpers ---
+    // --- List-mutation helpers ---
 
     private List<NpcDefinition> appended(NpcDefinition def) {
         List<NpcDefinition> next = new ArrayList<>(manager.all());

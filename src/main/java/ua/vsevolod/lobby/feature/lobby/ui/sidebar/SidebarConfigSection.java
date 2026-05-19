@@ -39,47 +39,62 @@ public final class SidebarConfigSection implements ConfigSection<SidebarConfig> 
 
     private static final String TEMPLATE = """
             # ====================================================
-            # Sidebar (scoreboard) configuration
+            # Сайдбар (таблица очков справа на экране) — sidebar.yml
             # ====================================================
-            # Edit this file then run /reload.
+            # После изменения файла выполни /reload.
             #
-            # Phase-1 scope: TEXT and animation frames hot-reload live.
-            # Changing animation interval / refresh interval requires a server restart.
-            # Reordering / adding new lines is Phase-5 (not yet supported).
+            # Текст и кадры анимации применяются мгновенно через /reload.
+            # Изменение animation-interval-ms и refresh-interval-ms требует перезапуска сервера.
 
-            # Master switch. false → no sidebar is shown to anyone. /reload toggles live.
+            # Главный переключатель. false = сайдбар не отображается ни одному игроку.
             enabled: true
 
             title:
-              # Frame template — `{frame}` substitutes one entry from `frames` each tick.
+              # Шаблон заголовка. {frame} заменяется одним из кадров анимации из frames.
+              # Цветовые коды: &X (стандартные), &#RRGGBB (HEX). &l — жирный, &o — курсив.
               frame-template: "&7« {frame}&f &7»"
+
+              # Интервал смены кадров анимации в миллисекундах (800 = 0.8 секунды).
               animation-interval-ms: 800
+
+              # Кадры анимации заголовка. Перечисляй любые строки — они меняются по кругу.
               frames:
                 - "&#FFB300&lO&#FFBE1A&lV&#FFC933&lE&#FFD44D&lR&#FFDF66&lD&#FFEA80&lY&#FFF599&lN"
                 - "&#FFE066&lO&#FFD94D&lV&#FFD233&lE&#FFCB1A&lR&#FFC400&lD&#FFB000&lY&#FF9C00&lN"
                 - "&#F7C948&lO&#F5B73D&lV&#F3A533&lE&#F19228&lR&#EF801E&lD&#ED6D13&lY&#EB5B09&lN"
                 - "&#FF9700&lO&#FFA31A&lV&#FFAF33&lE&#FFBB4D&lR&#FFC766&lD&#FFD380&lY&#FFDF99&lN"
 
-            # How often dynamic data (ping, server online counts) is re-pushed to viewers.
+            # Как часто обновляются данные сайдбара (пинг, онлайн) в миллисекундах.
+            # 1000 = раз в секунду. Меньше значение — плавнее, но больше нагрузка.
             refresh-interval-ms: 1000
 
+            # Строка приветствия (первая строка тела сайдбара).
             welcome-text: "  &7Добро пожаловать!"
 
+            # Строки описания под приветствием. Можно добавлять/удалять строки.
             description-lines:
               - " &7- &#FFF2E0Скорее &eвыбирай &#FFF2E0режим"
               - " &7- &#FFF2E0для &bигры &#FFF2E0на сервере"
               - " &7- &#FFF2E0и начинай свой &#EA1B40путь"
 
+            # Заголовок секции серверов (перед списком режимов).
             modes-header: "&#FF9700↶ &#FFF2E0Режимы онлайн &#FF9700↷"
 
-            # `{ping}` → player.latency()
+            # Шаблон строки с пингом. {ping} — задержка текущего игрока в миллисекундах.
             ping-template: "&6➜ &fВаш пинг&7: &a{ping}"
 
-            # Per-server line. `{world}`, `{status}` are required; `{status}` is replaced by one
-            # of status-online / status-soon / status-offline depending on server state.
+            # Шаблон строки для каждого игрового сервера.
+            # {world}  — название сервера (из кода, не из этого файла).
+            # {status} — подставляется один из трёх шаблонов ниже в зависимости от статуса.
             server-line-template: "  &7• &#FFF2E0{world}&7: {status}"
+
+            # Текст при статусе "онлайн". {count} — количество игроков на сервере.
             status-online:  "&#EA1B40{count}"
+
+            # Текст при статусе "скоро откроется".
             status-soon:    "&#EA1B40Скоро"
+
+            # Текст при статусе "выключен".
             status-offline: "&#EA1B40Выключен"
             """;
 

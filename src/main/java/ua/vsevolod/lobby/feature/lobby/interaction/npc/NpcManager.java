@@ -60,6 +60,7 @@ public final class NpcManager {
         }
 
         // Spawn anything new or freshly-visible.
+        List<LobbyNpc> newlySpawned = new ArrayList<>();
         for (NpcDefinition def : config.npcs()) {
             if (!def.visible()) continue;
             if (!live.containsKey(def.id())) {
@@ -67,6 +68,19 @@ public final class NpcManager {
                 live.put(def.id(), npc);
                 entityToId.put(npc, def.id());
                 applyGlowTeam(npc, def);
+                newlySpawned.add(npc);
+            }
+        }
+
+        // Show newly spawned NPCs to all players currently in the instance.
+        if (!newlySpawned.isEmpty()) {
+            for (var player : instance.getPlayers()) {
+                for (LobbyNpc npc : newlySpawned) {
+                    try {
+                        npc.addViewer(player);
+                    } catch (ArrayIndexOutOfBoundsException ignored) {
+                    }
+                }
             }
         }
 
@@ -136,7 +150,9 @@ public final class NpcManager {
     private void detachFromTeam(LobbyNpc npc) {
         String uuid = npc.getUuid().toString();
         for (Team team : glowTeams.values()) {
-            team.removeMember(uuid);
+            if (team.getMembers().contains(uuid)) {
+                team.removeMember(uuid);
+            }
         }
     }
 
@@ -162,7 +178,12 @@ public final class NpcManager {
         synchronized (this) {
             snapshot = live.values().toArray(new LobbyNpc[0]);
         }
-        for (LobbyNpc npc : snapshot) npc.addViewer(player);
+        for (LobbyNpc npc : snapshot) {
+            try {
+                npc.addViewer(player);
+            } catch (ArrayIndexOutOfBoundsException ignored) {
+            }
+        }
     }
 
     public void hideFrom(Player player) {
@@ -170,7 +191,12 @@ public final class NpcManager {
         synchronized (this) {
             snapshot = live.values().toArray(new LobbyNpc[0]);
         }
-        for (LobbyNpc npc : snapshot) npc.removeViewer(player);
+        for (LobbyNpc npc : snapshot) {
+            try {
+                npc.removeViewer(player);
+            } catch (ArrayIndexOutOfBoundsException ignored) {
+            }
+        }
     }
 
     public synchronized Optional<NpcDefinition> findById(String id) {

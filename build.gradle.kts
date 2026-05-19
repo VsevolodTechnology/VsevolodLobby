@@ -19,10 +19,7 @@ repositories {
 
 java {
     toolchain {
-        // Build with whatever Java is on the local machine that's ≥ 25.
-        // `release=25` below means the produced bytecode targets Java 25 either way —
-        // the toolchain is only the COMPILER's host JDK, not the target. Java 26+ is allowed.
-        languageVersion.set(JavaLanguageVersion.of(26))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 

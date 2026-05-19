@@ -17,7 +17,7 @@ public class LobbyPlayerLoginListener implements LobbyEventRegistration {
                 event.getConnection().kick(Component.text(LobbyConfig.Messages.SHUTTING_DOWN_MSG, NamedTextColor.RED));
                 return;
             }
-            int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
+            int online = MinecraftServer.getConnectionManager().getOnlinePlayerCount();
             if (online >= LobbyConfig.Settings.MAX_PLAYERS
                     && !LobbyConfig.Settings.BYPASS_USERS.contains(event.getGameProfile().name())) {
                 event.getConnection().kick(Component.text("Сервер заполнен! Попробуй позже.", NamedTextColor.RED));

@@ -7,8 +7,10 @@ import net.minestom.server.network.packet.server.ServerPacket;
 import net.minestom.server.scoreboard.Sidebar;
 import net.minestom.server.utils.PacketSendingUtils;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Collections;
 
 /**
@@ -34,7 +36,7 @@ import java.util.Collections;
  */
 public class PerViewerSidebar extends Sidebar {
 
-    private static final Method updatePrefixMethod;
+    private static final MethodHandle updatePrefixHandle;
     private static final Field sidebarTeamField;
 
     static {
@@ -43,11 +45,10 @@ public class PerViewerSidebar extends Sidebar {
             sidebarTeamField = lineClass.getDeclaredField("sidebarTeam");
             sidebarTeamField.setAccessible(true);
 
-            // Cache the updatePrefix Method once at class load — looking it up on every call
-            // (as the old code did) was wasted reflection cost on the sidebar refresh path.
             Class<?> teamClass = Class.forName("net.minestom.server.scoreboard.Sidebar$SidebarTeam");
-            updatePrefixMethod = teamClass.getDeclaredMethod("updatePrefix", Component.class);
-            updatePrefixMethod.setAccessible(true);
+            var method = teamClass.getDeclaredMethod("updatePrefix", Component.class);
+            method.setAccessible(true);
+            updatePrefixHandle = MethodHandles.lookup().unreflect(method);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -76,12 +77,9 @@ public class PerViewerSidebar extends Sidebar {
 
         try {
             Object sidebarTeam = sidebarTeamField.get(line);
-            // updatePrefix is non-mutating in Minestom — it builds the packet from current state
-            // and the supplied prefix without touching SidebarTeam.prefix. That's the whole point
-            // of using it here instead of refreshContent (which DOES mutate).
-            SendablePacket packet = (SendablePacket) updatePrefixMethod.invoke(sidebarTeam, content);
+            SendablePacket packet = (SendablePacket) updatePrefixHandle.invoke(sidebarTeam, content);
             sendPacketToViewer(packet, viewer);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             e.printStackTrace();
         }
     }

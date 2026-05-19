@@ -19,13 +19,20 @@ import net.minestom.server.timer.ExecutionType;
 import net.minestom.server.timer.Task;
 import net.minestom.server.timer.TaskSchedule;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
 import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicReference;
 
 public final class LobbyMusicManager {
 
@@ -45,21 +52,25 @@ public final class LobbyMusicManager {
             .append(Component.text("Выкл", TextColor.color(0xFA3B3B)))
             .append(Component.text("]", NamedTextColor.DARK_GRAY)).decoration(TextDecoration.ITALIC, false);
 
-    private final List<Track> allTracks = new ArrayList<>();
+    private static final ItemStack TOGGLE_ITEM_ON = buildMusicToggle(true);
+    private static final ItemStack TOGGLE_ITEM_OFF = buildMusicToggle(false);
 
-    private final Set<UUID> mutedPlayers = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, Task> activeTasks = new ConcurrentHashMap<>();
-    private final Map<UUID, Task> ambientSuppressors = new ConcurrentHashMap<>();
-    private final Map<UUID, Deque<Track>> playerQueues = new ConcurrentHashMap<>();
-    private final Map<UUID, Track> lastPlayedTrack = new ConcurrentHashMap<>();
-    private final Map<UUID, Track> currentTrack = new ConcurrentHashMap<>();
-    private final Map<UUID, Integer> playbackTokens = new ConcurrentHashMap<>();
+    private PlayerPreferencesService preferencesService;
+
+    private final List<Track> allTracks = new ArrayList<>();
+    private final Map<String, Track> trackByKey = new HashMap<>();
+    private final Map<UUID, PlayerMusicState> states = new ConcurrentHashMap<>();
+    private Task globalAmbientTask;
 
     public LobbyMusicManager() {
         registerAllTracks();
     }
 
     public static ItemStack getMusicToggle(boolean enabled) {
+        return enabled ? TOGGLE_ITEM_ON : TOGGLE_ITEM_OFF;
+    }
+
+    private static ItemStack buildMusicToggle(boolean enabled) {
         Material material = enabled ? Material.MUSIC_DISC_CAT : Material.MUSIC_DISC_BLOCKS;
         var space = Component.text(" - ", NamedTextColor.GRAY);
 
@@ -69,66 +80,46 @@ public final class LobbyMusicManager {
                         MUSIC_TEXT_OFF)
                 .lore(
                         Component.empty(),
-                        Component.text("«Информация»", TextColor.color(0x65D1FC)).decoration(TextDecoration.ITALIC, false),
+                        Component.text(" «Информация»", TextColor.color(0x65D1FC)).decoration(TextDecoration.ITALIC, false),
                         Component.text().append(space).append(Component.text("Фоновая музыка лобби", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
-                        Component.text().append(space).append(Component.text("Можно отключить полностью", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
+                        Component.text().append(space).append(Component.text("ПКМ — включить/выключить", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
+                        Component.text().append(space).append(Component.text("Клавиша Q — выбор музыки", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
                         Component.empty(),
-                        Component.text("➥ Нажмите, чтобы переключиться", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false)
+                        Component.text("➥ Нажмите для действия", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false)
                 )
-                // .hideExtraTooltip() теперь делает всю работу за тебя!
                 .hideExtraTooltip()
                 .set(MUSIC_TAG, (byte) 1)
                 .build();
     }
 
-    private void ensureAmbientSuppressor(Player player) {
-        UUID uuid = player.getUuid();
-
-        // computeIfAbsent atomicity matters: the old `containsKey` + later `put` was a TOCTOU race —
-        // two concurrent join events for the same UUID (re-login, debug spawn, …) could both pass
-        // the containsKey check and both schedule a task, but only the second was tracked in the
-        // map. The first task then ran forever on every tick with no way to cancel it. Net effect:
-        // every duplicate ensureAmbientSuppressor() call permanently leaked one scheduled task and
-        // dragged MSPT down a little more each time.
-        ambientSuppressors.computeIfAbsent(uuid, ignored -> {
-            AtomicReference<Task> taskRef = new AtomicReference<>();
-            Task task = MinecraftServer.getSchedulerManager().scheduleTask(
-                    () -> {
-                        if (!player.isOnline()) {
-                            Task currentTask = taskRef.get();
-                            if (currentTask != null) {
-                                currentTask.cancel();
-                                ambientSuppressors.remove(uuid, currentTask);
-                            }
-                            return;
-                        }
-
-                        // The lobby owns the audible experience, so vanilla ambient music stays muted.
+    public void startGlobalAmbientSuppressor() {
+        if (globalAmbientTask != null) globalAmbientTask.cancel();
+        globalAmbientTask = MinecraftServer.getSchedulerManager().scheduleTask(
+                () -> {
+                    if (states.isEmpty()) return;
+                    var cm = MinecraftServer.getConnectionManager();
+                    for (Map.Entry<UUID, PlayerMusicState> entry : states.entrySet()) {
+                        Player player = cm.getOnlinePlayerByUuid(entry.getKey());
+                        if (player == null) continue;
                         player.stopSound(SoundStop.source(Sound.Source.MUSIC));
-
-                        if (mutedPlayers.contains(uuid)) {
+                        if (entry.getValue().muted) {
                             player.stopSound(SoundStop.source(Sound.Source.RECORD));
                         }
-                    },
-                    TaskSchedule.immediate(),
-                    AMBIENT_SUPPRESS_INTERVAL,
-                    ExecutionType.TICK_START
-            );
-            taskRef.set(task);
-            return task;
-        });
+                    }
+                },
+                TaskSchedule.immediate(),
+                AMBIENT_SUPPRESS_INTERVAL,
+                ExecutionType.TICK_START
+        );
     }
 
-    private void cancelAmbientSuppressor(UUID playerUuid) {
-        Task suppressTask = ambientSuppressors.remove(playerUuid);
-        if (suppressTask != null) {
-            suppressTask.cancel();
-        }
+    private PlayerMusicState getOrCreateState(UUID uuid) {
+        return states.computeIfAbsent(uuid, k -> new PlayerMusicState());
     }
 
     public void handleJoin(PlayerSpawnEvent event) {
         var player = event.getPlayer();
-        ensureAmbientSuppressor(player);
+        getOrCreateState(player.getUuid());
 
         if (!isEnabled(player)) {
             stopPlayback(player);
@@ -139,33 +130,47 @@ public final class LobbyMusicManager {
     }
 
     public void handleDisconnect(PlayerDisconnectEvent event) {
-        var player = event.getPlayer();
-        UUID uuid = player.getUuid();
-        stopPlayback(player);
-        cancelAmbientSuppressor(uuid);
-
-        mutedPlayers.remove(uuid);
-        playerQueues.remove(uuid);
-        lastPlayedTrack.remove(uuid);
-        currentTrack.remove(uuid);
-        playbackTokens.remove(uuid);
+        UUID uuid = event.getPlayer().getUuid();
+        PlayerMusicState state = states.remove(uuid);
+        if (state != null) {
+            state.nextToken(); // invalidate any pending scheduled playback
+            if (state.activeTask != null) {
+                state.activeTask.cancel();
+                state.activeTask = null;
+            }
+        }
+        // Do not send sound packets to a disconnecting player — connection is already closing.
     }
 
     public boolean isEnabled(Player player) {
-        return !mutedPlayers.contains(player.getUuid());
+        PlayerMusicState state = states.get(player.getUuid());
+        return state == null || !state.muted;
     }
 
     public boolean isDisabled(Player player) {
-        return mutedPlayers.contains(player.getUuid());
+        PlayerMusicState state = states.get(player.getUuid());
+        return state != null && state.muted;
+    }
+
+    public void setPreferencesService(PlayerPreferencesService service) {
+        this.preferencesService = service;
+    }
+
+    public void applyMusicPreference(UUID uuid, boolean musicEnabled) {
+        PlayerMusicState state = getOrCreateState(uuid);
+        state.muted = !musicEnabled;
     }
 
     public void setEnabled(Player player, boolean enabled) {
+        PlayerMusicState state = getOrCreateState(player.getUuid());
+        state.muted = !enabled;
         if (enabled) {
-            mutedPlayers.remove(player.getUuid());
             start(player);
         } else {
-            mutedPlayers.add(player.getUuid());
             stop(player);
+        }
+        if (preferencesService != null) {
+            preferencesService.saveMusicEnabled(player.getUuid(), enabled);
         }
     }
 
@@ -173,57 +178,95 @@ public final class LobbyMusicManager {
         setEnabled(player, isDisabled(player));
     }
 
-    public void start(Player player) {
+    public void playSpecific(Player player, String trackKey) {
         UUID uuid = player.getUuid();
-
-        ensureAmbientSuppressor(player);
+        PlayerMusicState state = getOrCreateState(uuid);
+        state.muted = false;
         stopPlayback(player);
 
-        if (!player.isOnline() || mutedPlayers.contains(uuid)) {
+        Track track = findTrack(trackKey);
+        if (track == null) return;
+
+        int token = state.nextToken();
+        state.currentTrack = track;
+        state.lastPlayedTrack = track;
+        player.playSound(track.toAdventureSound(), Sound.Emitter.self());
+
+        Task task = MinecraftServer.getSchedulerManager().scheduleTask(
+                () -> {
+                    if (!player.isOnline() || state.muted || state.playbackToken != token) return;
+                    playNext(player, token);
+                },
+                TaskSchedule.duration(Duration.ofSeconds(track.durationSeconds())),
+                TaskSchedule.stop()
+        );
+        state.activeTask = task;
+
+        if (preferencesService != null) {
+            preferencesService.saveMusicEnabled(uuid, true);
+        }
+    }
+
+    private Track findTrack(String key) {
+        return trackByKey.get(key);
+    }
+
+    public void start(Player player) {
+        UUID uuid = player.getUuid();
+        PlayerMusicState state = getOrCreateState(uuid);
+
+        stopPlayback(player);
+
+        if (!player.isOnline() || state.muted) {
             return;
         }
 
-        int playbackToken = nextPlaybackToken(uuid);
+        int playbackToken = state.nextToken();
         playNext(player, playbackToken);
     }
 
     public void stop(Player player) {
-        ensureAmbientSuppressor(player);
+        getOrCreateState(player.getUuid());
         stopPlayback(player);
     }
 
     private void stopPlayback(Player player) {
         UUID uuid = player.getUuid();
-        nextPlaybackToken(uuid);
+        PlayerMusicState state = states.get(uuid);
+        if (state != null) {
+            state.nextToken();
 
-        Task task = activeTasks.remove(uuid);
-        if (task != null) {
-            task.cancel();
+            if (state.activeTask != null) {
+                state.activeTask.cancel();
+                state.activeTask = null;
+            }
+
+            stopCurrentTrack(player, state);
         }
 
-        stopCurrentTrack(player);
         player.stopSound(SoundStop.source(Sound.Source.RECORD));
         player.stopSound(SoundStop.source(Sound.Source.MUSIC));
     }
 
     private void playNext(Player player, int playbackToken) {
         UUID uuid = player.getUuid();
+        PlayerMusicState state = states.get(uuid);
 
-        if (!player.isOnline() || mutedPlayers.contains(uuid) || !isCurrentPlayback(uuid, playbackToken)) {
+        if (state == null || !player.isOnline() || state.muted || state.playbackToken != playbackToken) {
             return;
         }
 
-        stopCurrentTrack(player);
+        stopCurrentTrack(player, state);
 
-        Track nextTrack = pollNextTrack(uuid);
-        currentTrack.put(uuid, nextTrack);
-        lastPlayedTrack.put(uuid, nextTrack);
+        Track nextTrack = pollNextTrack(state);
+        state.currentTrack = nextTrack;
+        state.lastPlayedTrack = nextTrack;
 
         player.playSound(nextTrack.toAdventureSound(), Sound.Emitter.self());
 
         Task task = MinecraftServer.getSchedulerManager().scheduleTask(
                 () -> {
-                    if (!player.isOnline() || mutedPlayers.contains(uuid) || !isCurrentPlayback(uuid, playbackToken)) {
+                    if (!player.isOnline() || state.muted || state.playbackToken != playbackToken) {
                         return;
                     }
 
@@ -233,26 +276,24 @@ public final class LobbyMusicManager {
                 TaskSchedule.stop()
         );
 
-        activeTasks.put(uuid, task);
+        state.activeTask = task;
     }
 
-    private void stopCurrentTrack(Player player) {
-        UUID uuid = player.getUuid();
-        Track playing = currentTrack.remove(uuid);
+    private void stopCurrentTrack(Player player, PlayerMusicState state) {
+        Track playing = state.currentTrack;
+        state.currentTrack = null;
 
         if (playing != null) {
             player.stopSound(SoundStop.named(Key.key(playing.key())));
         }
     }
 
-    private Track pollNextTrack(UUID playerUuid) {
-        Deque<Track> queue = playerQueues.computeIfAbsent(playerUuid, ignored -> new ArrayDeque<>());
-
-        if (queue.isEmpty()) {
-            refillQueue(playerUuid, queue);
+    private Track pollNextTrack(PlayerMusicState state) {
+        if (state.queue.isEmpty()) {
+            refillQueue(state);
         }
 
-        Track track = queue.pollFirst();
+        Track track = state.queue.pollFirst();
         if (track == null) {
             track = allTracks.get(ThreadLocalRandom.current().nextInt(allTracks.size()));
         }
@@ -260,16 +301,16 @@ public final class LobbyMusicManager {
         return track;
     }
 
-    private void refillQueue(UUID playerUuid, Deque<Track> queue) {
+    private void refillQueue(PlayerMusicState state) {
         List<Track> shuffled = new ArrayList<>(allTracks);
         Collections.shuffle(shuffled, ThreadLocalRandom.current());
 
-        Track last = lastPlayedTrack.get(playerUuid);
+        Track last = state.lastPlayedTrack;
         if (last != null && shuffled.size() > 1 && shuffled.get(0).key().equals(last.key())) {
             Collections.swap(shuffled, 0, 1);
         }
 
-        queue.addAll(shuffled);
+        state.queue.addAll(shuffled);
     }
 
     private void registerAllTracks() {
@@ -332,15 +373,22 @@ public final class LobbyMusicManager {
     }
 
     private void add(@KeyPattern String key, int durationSeconds) {
-        allTracks.add(new Track(key, durationSeconds));
+        Track track = new Track(key, durationSeconds);
+        allTracks.add(track);
+        trackByKey.put(key, track);
     }
 
-    private int nextPlaybackToken(UUID playerUuid) {
-        return playbackTokens.merge(playerUuid, 1, Integer::sum);
-    }
+    private static final class PlayerMusicState {
+        boolean muted;
+        Task activeTask;
+        final Deque<Track> queue = new ArrayDeque<>();
+        Track lastPlayedTrack;
+        Track currentTrack;
+        int playbackToken;
 
-    private boolean isCurrentPlayback(UUID playerUuid, int playbackToken) {
-        return playbackTokens.getOrDefault(playerUuid, 0) == playbackToken;
+        int nextToken() {
+            return ++playbackToken;
+        }
     }
 
     private record Track(@KeyPattern String key, int durationSeconds) {
@@ -352,21 +400,5 @@ public final class LobbyMusicManager {
                     MUSIC_PITCH
             );
         }
-    }
-
-    /**
-     * Consolidation target for REC-A (audit 2026-05-17).
-     * Consolidates the 7 UUID-keyed maps into a single record to prevent cleanup-omission bugs by construction.
-     * Migration: replace all Map<UUID, T> with PlayerMusicState fields via atomic compute-if-absent patterns.
-     */
-    record PlayerMusicState(
-            boolean muted,
-            Task activePlaybackTask,
-            Task ambientSuppressorTask,
-            Deque<Track> queue,
-            Track lastPlayedTrack,
-            Track currentTrack,
-            int playbackToken
-    ) {
     }
 }

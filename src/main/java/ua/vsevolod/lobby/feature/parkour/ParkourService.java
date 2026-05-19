@@ -9,8 +9,8 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.instance.ChunkLoader;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
-import net.minestom.server.instance.block.Block;
 import net.minestom.server.timer.TaskSchedule;
+import net.minestom.server.registry.RegistryKey;
 import net.minestom.server.world.DimensionType;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardEntry;
@@ -19,7 +19,9 @@ import ua.vsevolod.lobby.util.Text;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ParkourService {
 
@@ -35,40 +37,62 @@ public final class ParkourService {
         this.leaderboardService = leaderboardService;
     }
 
-    public void start(Player player) {
+    public void start(Player player, ParkourDifficulty difficulty, ParkourTheme theme) {
+        startWithDimension(player, difficulty, theme, DimensionType.THE_END, false, ParkourSoundPreset.STANDARD);
+    }
+
+    public void startWithDimension(Player player, ParkourDifficulty difficulty, ParkourTheme theme,
+                                   RegistryKey<DimensionType> dimension, boolean trainingMode,
+                                   ParkourSoundPreset soundPreset) {
         stop(player);
 
-        // Pass an explicit noop ChunkLoader so Minestom does not default to AnvilLoader and
-        // probe the filesystem for non-existent .mca files. Spark profile (2026-05-16) caught
-        // AnvilLoader.loadMCA at 0.30 s of FJ-pool CPU per parkour run — pure waste because
-        // this instance is generator-only.
-        InstanceContainer instance = instanceManager.createInstanceContainer(
-                DimensionType.OVERWORLD, ChunkLoader.noop());
-        instance.setGenerator(unit -> {
-            unit.modifier().fillHeight(0, 80, Block.AIR);
-            unit.modifier().fillHeight(-64, 0, Block.BARRIER);
-        });
+        InstanceContainer instance = instanceManager.createInstanceContainer(dimension, ChunkLoader.noop());
 
         Pos start = LobbyConfig.Parkour.START_POS;
         ParkourLeaderboardEntry bestEntry = leaderboardService.bestEntry(player.getUuid()).orElse(null);
         int bestScore = bestEntry != null ? bestEntry.score() : 0;
         long bestDuration = bestEntry != null ? bestEntry.durationMillis() : Long.MAX_VALUE;
 
-        ParkourSession session = new ParkourSession(player, instance, start, bestScore, bestDuration);
-        sessions.put(player.getUuid(), session);
+        ParkourSession session = new ParkourSession(player, instance, start, bestScore, bestDuration,
+                difficulty, theme, trainingMode, soundPreset);
+        session.setCurrentDimension(dimension);
 
-        player.setInstance(instance, start).thenRun(session::start);
+        int chunkX = Math.floorDiv(start.blockX(), 16);
+        int chunkZ = Math.floorDiv(start.blockZ(), 16);
+        int radius = 2;
+        int side = 2 * radius + 1;
+
+        CompletableFuture<?>[] futures = new CompletableFuture[side * side];
+        int idx = 0;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                futures[idx++] = instance.loadChunk(chunkX + dx, chunkZ + dz);
+            }
+        }
+
+        CompletableFuture.allOf(futures).thenRun(() -> {
+            if (!player.isOnline()) {
+                scheduleInstanceUnregister(instance);
+                return;
+            }
+            session.placeInitialBlocks();
+            player.setInstance(instance, start).thenRun(() -> {
+                if (!player.isOnline()) {
+                    scheduleInstanceUnregister(instance);
+                    return;
+                }
+                sessions.put(player.getUuid(), session);
+                session.start();
+            });
+        });
     }
 
     public void stop(Player player) {
         ParkourSession old = sessions.remove(player.getUuid());
         if (old == null) return;
 
-        if (old.isFinished()) {
-            var result = old.toRunResult();
-            if (result.score() > 0) {
-                leaderboardService.submit(result);
-            }
+        if (old.isScored() && old.getScore() > 0) {
+            leaderboardService.submit(old.toRunResult());
         }
 
         InstanceContainer instance = old.getInstance();
@@ -78,20 +102,17 @@ public final class ParkourService {
             }
         }
 
-        // Each parkour run created its own InstanceContainer via `instanceManager.createInstanceContainer`.
-        // Without this cleanup the InstanceManager keeps a strong reference to every past run's
-        // instance — chunks, generator, block storage, the whole graph — forever. A handful of
-        // /parkour cycles already shows up in the heap; over a day of uptime it is a true leak.
-        // We can't unregister synchronously because the player is still inside the instance at
-        // this point (returnToLobby() does setInstance(lobby) AFTER stop()); poll until the
-        // player has been moved out, then unregister and stop the task.
         scheduleInstanceUnregister(instance);
     }
 
     private void scheduleInstanceUnregister(InstanceContainer instance) {
+        AtomicInteger attempts = new AtomicInteger(0);
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             if (!instance.getPlayers().isEmpty()) {
-                return TaskSchedule.tick(20); // 1 s; still occupied, check again
+                if (attempts.incrementAndGet() < 90) {
+                    return TaskSchedule.tick(20);
+                }
+                System.err.println("[ParkourService] Force-unregistering instance after 90s timeout");
             }
             try {
                 instanceManager.unregisterInstance(instance);
@@ -102,6 +123,61 @@ public final class ParkourService {
         });
     }
 
+    public void changeDimension(Player player, RegistryKey<DimensionType> dimensionType) {
+        ParkourSession session = sessions.get(player.getUuid());
+        if (session == null || session.isFinished()) return;
+        if (session.getCurrentDimension() == dimensionType) return;
+        // Guard against rapid concurrent calls before the previous async op completes
+        if (session.dimensionChangeInProgress) return;
+        session.dimensionChangeInProgress = true;
+
+        InstanceContainer oldInstance = session.getInstance();
+
+        InstanceContainer newInstance = instanceManager.createInstanceContainer(
+                dimensionType, ChunkLoader.noop());
+
+        Pos playerPos = player.getPosition();
+        int chunkX = Math.floorDiv(playerPos.blockX(), 16);
+        int chunkZ = Math.floorDiv(playerPos.blockZ(), 16);
+        int radius = 2;
+        int side = 2 * radius + 1;
+
+        CompletableFuture<?>[] futures = new CompletableFuture[side * side];
+        int idx = 0;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                futures[idx++] = newInstance.loadChunk(chunkX + dx, chunkZ + dz);
+            }
+        }
+
+        CompletableFuture.allOf(futures).thenRun(() -> {
+            session.dimensionChangeInProgress = false;
+            if (!player.isOnline()) {
+                scheduleInstanceUnregister(newInstance);
+                return;
+            }
+            session.swapInstance(newInstance, dimensionType);
+            player.setInstance(newInstance, playerPos).thenRun(() ->
+                    player.getInventory().setItemStack(
+                            ParkourSettingsMenu.ITEM_SLOT, ParkourSettingsMenu.createItem()));
+            scheduleInstanceUnregister(oldInstance);
+        });
+    }
+
+    public void changeTheme(Player player, ParkourTheme newTheme) {
+        ParkourSession session = sessions.get(player.getUuid());
+        if (session == null || session.isFinished()) return;
+        session.swapTheme(newTheme);
+    }
+
+    public void restart(Player player, ParkourDifficulty difficulty, ParkourTheme theme,
+                        RegistryKey<DimensionType> dimension, boolean trainingMode,
+                        ParkourSoundPreset soundPreset) {
+        ParkourSession current = sessions.get(player.getUuid());
+        if (current == null) return;
+        startWithDimension(player, difficulty, theme, dimension, trainingMode, soundPreset);
+    }
+
     public ParkourSession getSession(Player player) {
         return sessions.get(player.getUuid());
     }
@@ -110,14 +186,6 @@ public final class ParkourService {
         return sessions.containsKey(player.getUuid());
     }
 
-    /**
-     * Lobby-global PlayerMoveEvent fires 5–10×/s per player (so ~2.5k–5k/s at 500 online).
-     * The listener body always early-returns when no one is in parkour — but only AFTER paying
-     * for an event-dispatch + per-player hash lookup. Expose this O(1) flag so the listener can
-     * bail in the very first instruction when the parkour sessions map is empty.
-     * Audit HIGH-07 — cheaper than the recommended EventNode scoping because that would require
-     * restructuring around the per-run InstanceContainer lifecycle.
-     */
     public boolean hasAnySession() {
         return !sessions.isEmpty();
     }

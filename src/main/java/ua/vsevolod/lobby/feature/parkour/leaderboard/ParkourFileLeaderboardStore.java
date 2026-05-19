@@ -136,9 +136,20 @@ public final class ParkourFileLeaderboardStore implements ParkourLeaderboardStor
             uniqueEntries.merge(entry.playerUuid(), entry, this::pickBetterEntry);
         }
 
-        return uniqueEntries.values().stream()
-                .sorted(ParkourLeaderboardEntry.RANKING)
-                .toList();
+        List<ParkourLeaderboardEntry> values = new ArrayList<>(uniqueEntries.values());
+        if (!isSorted(values)) {
+            values.sort(ParkourLeaderboardEntry.RANKING);
+        }
+        return List.copyOf(values);
+    }
+
+    private static boolean isSorted(List<ParkourLeaderboardEntry> list) {
+        for (int i = 1; i < list.size(); i++) {
+            if (ParkourLeaderboardEntry.RANKING.compare(list.get(i - 1), list.get(i)) > 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private ParkourLeaderboardEntry pickBetterEntry(ParkourLeaderboardEntry left, ParkourLeaderboardEntry right) {

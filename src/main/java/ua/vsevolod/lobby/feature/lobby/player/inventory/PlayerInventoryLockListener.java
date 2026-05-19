@@ -13,13 +13,11 @@ public class PlayerInventoryLockListener implements LobbyEventRegistration {
     @Override
     public void register(GlobalEventHandler handler) {
         handler.addListener(InventoryPreClickEvent.class, event -> {
-            if (!(event.getInventory() instanceof PlayerInventory)) {
-                return;
-            }
-
             if (LobbyConfig.Settings.BYPASS_USERS.contains(event.getPlayer().getUsername())) return;
 
-            event.setCancelled(true);
+            if (event.getInventory() instanceof PlayerInventory) {
+                event.setCancelled(true);
+            }
         });
         handler.addListener(CreativeInventoryActionEvent.class, event -> {
             if (LobbyConfig.Settings.BYPASS_USERS.contains(event.getPlayer().getUsername())) return;
@@ -32,7 +30,6 @@ public class PlayerInventoryLockListener implements LobbyEventRegistration {
             event.setCancelled(true);
         });
         handler.addListener(ItemDropEvent.class, event -> {
-            if (LobbyConfig.Settings.BYPASS_USERS.contains(event.getPlayer().getUsername())) return;
             event.setCancelled(true);
         });
     }

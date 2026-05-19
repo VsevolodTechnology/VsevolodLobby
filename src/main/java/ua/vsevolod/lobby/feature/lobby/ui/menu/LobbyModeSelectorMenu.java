@@ -56,7 +56,6 @@ public final class LobbyModeSelectorMenu {
             }
 
             event.setCancelled(true);
-
             if (event.getSlot() == GRIEF_SLOT) {
                 ServerRegistry.findById("grief.1.16x")
                         .ifPresent(server -> selectionService.selectServer(event.getPlayer(), server));

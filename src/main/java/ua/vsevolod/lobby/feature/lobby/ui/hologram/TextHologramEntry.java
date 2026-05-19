@@ -176,39 +176,4 @@ public final class TextHologramEntry {
         return new EntityMetaDataPacket(entityId, fake.getMetadataPacket().entries());
     }
 
-    public Entity createEntityPacketT() {
-        Entity fake = new Entity(EntityType.TEXT_DISPLAY, uuid);
-        fake.editEntityMeta(TextDisplayMeta.class, meta -> {
-            meta.setText(text);
-            meta.setLineWidth(style.lineWidth());
-            meta.setBackgroundColor(style.backgroundColor());
-            meta.setTextOpacity(style.textOpacity());
-            meta.setSeeThrough(style.seeThrough());
-            meta.setUseDefaultBackground(style.useDefaultBackground());
-            meta.setShadow(style.shadow());
-            meta.setAlignment(style.alignment());
-            meta.setBillboardRenderConstraints(style.billboard());
-            meta.setScale(style.scale());
-            meta.setTranslation(style.translation());
-            meta.setTransformationInterpolationStartDelta(style.interpolationDelay());
-            meta.setTransformationInterpolationDuration(style.transformationInterpolationDuration());
-            meta.setPosRotInterpolationDuration(style.posRotInterpolationDuration());
-
-            if (style.brightnessOverride() >= 0) {
-                meta.setBrightnessOverride(style.brightnessOverride());
-            }
-
-            meta.setViewRange(style.viewRange());
-            meta.setShadowRadius(style.shadowRadius());
-            meta.setShadowStrength(style.shadowStrength());
-            meta.setWidth(style.width());
-            meta.setHeight(style.height());
-
-            if (style.glowColorOverride() >= 0) {
-                meta.setGlowColorOverride(style.glowColorOverride());
-            }
-        });
-
-        return fake;
-    }
 }

@@ -1,44 +1,55 @@
 package ua.vsevolod.lobby.feature.lobby.player.join;
 
+import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
 import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpcService;
 import ua.vsevolod.lobby.feature.lobby.player.LobbyPlayerProvider;
+import ua.vsevolod.lobby.feature.lobby.player.behavior.PlayerBehaviorConfigSection;
+import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferences;
+import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
 import ua.vsevolod.lobby.feature.lobby.player.protocol.LobbyProtocolWarningService;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.LobbyWelcomeHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.ParkourLeaderboardHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.LobbySidebar;
+import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarToggle;
 import ua.vsevolod.lobby.util.Text;
 
 public final class LobbyJoinInitializer {
 
     private final LobbyMusicManager musicManager;
     private final LobbySidebar sidebar;
+    private final SidebarToggle sidebarToggle;
     private final LobbyProtocolWarningService protocolWarningService;
     private final LobbyWelcomeHologramService hologramService;
     private final ParkourLeaderboardHologramService parkourLeaderboardHologramService;
     private final LobbyItemService itemService;
     private final LobbyNpcService npcService;
+    private final PlayerPreferencesService preferencesService;
 
     public LobbyJoinInitializer(
             LobbyMusicManager musicManager,
             LobbySidebar sidebar,
+            SidebarToggle sidebarToggle,
             LobbyProtocolWarningService protocolWarningService,
             LobbyWelcomeHologramService hologramService,
             ParkourLeaderboardHologramService parkourLeaderboardHologramService,
             LobbyItemService itemService,
-            LobbyNpcService npcService
+            LobbyNpcService npcService,
+            PlayerPreferencesService preferencesService
     ) {
         LobbyPlayerProvider.register();
         this.musicManager = musicManager;
         this.sidebar = sidebar;
+        this.sidebarToggle = sidebarToggle;
         this.protocolWarningService = protocolWarningService;
         this.hologramService = hologramService;
         this.parkourLeaderboardHologramService = parkourLeaderboardHologramService;
         this.itemService = itemService;
         this.npcService = npcService;
+        this.preferencesService = preferencesService;
     }
 
     public void initialize(Player player) {
@@ -50,7 +61,7 @@ public final class LobbyJoinInitializer {
     }
 
     public void leave(Player player, boolean first) {
-        LobbyModule.holo.hide(player);
+        LobbyModule.hologramManager.hideFrom(player);
         sidebar.hide(player);
         hologramService.hideWelcome(player, first);
         parkourLeaderboardHologramService.hideFrom(player);
@@ -64,11 +75,24 @@ public final class LobbyJoinInitializer {
             protocolWarningService.showIfNeeded(player);
         }
 
-        LobbyModule.holo.show(player);
+        LobbyModule.hologramManager.showTo(player);
         setupProfile(player);
         setupState(player);
-        itemService.giveJoinItems(player, musicManager.isEnabled(player));
-        sidebar.show(player);
+
+        if (sendWelcomeMessage && PlayerBehaviorConfigSection.INSTANCE.current().restoreLastPosition()) {
+            PlayerPreferences prefs = preferencesService.get(player.getUuid());
+            if (prefs.positionSaveEnabled()) {
+                Pos saved = prefs.lastPosition();
+                if (saved != null) {
+                    player.teleport(saved);
+                }
+            }
+        }
+
+        itemService.giveJoinItems(player);
+        if (!sidebarToggle.isHidden(player)) {
+            sidebar.show(player);
+        }
         hologramService.showWelcome(player, sendWelcomeMessage);
         parkourLeaderboardHologramService.showTo(player);
         npcService.showTo(player);

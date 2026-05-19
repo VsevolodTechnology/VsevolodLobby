@@ -1,8 +1,5 @@
 package ua.vsevolod.lobby.feature.parkour;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public final class ParkourTimeFormatter {
 
     private ParkourTimeFormatter() {
@@ -14,15 +11,14 @@ public final class ParkourTimeFormatter {
         long hours = totalSeconds / 3600;
         long minutes = (totalSeconds % 3600) / 60;
         long seconds = totalSeconds % 60;
-        long centiseconds = (safeDuration % 1000) / 10;
 
         if (hours > 0) {
             return String.format("%dh %02dm %02ds", hours, minutes, seconds);
         }
         if (minutes > 0) {
-            return String.format("%dm %02d.%02ds", minutes, seconds, centiseconds);
+            return String.format("%dm %02ds", minutes, seconds);
         }
-        return String.format("%d.%02ds", seconds, centiseconds);
+        return String.format("%ds", seconds);
     }
 
     public static String leaderboard(long durationMillis) {
@@ -43,18 +39,20 @@ public final class ParkourTimeFormatter {
         long minutes = (totalSeconds % 3600) / 60;
         long seconds = totalSeconds % 60;
 
-        List<String> parts = new ArrayList<>(3);
+        StringBuilder sb = new StringBuilder(32);
         if (hours > 0) {
-            parts.add(hours + " " + plural(hours, "час", "часа", "часов"));
+            sb.append(hours).append(' ').append(plural(hours, "час", "часа", "часов"));
         }
         if (minutes > 0) {
-            parts.add(minutes + " " + plural(minutes, "минута", "минуты", "минут"));
+            if (!sb.isEmpty()) sb.append(' ');
+            sb.append(minutes).append(' ').append(plural(minutes, "минута", "минуты", "минут"));
         }
-        if (seconds > 0 || parts.isEmpty()) {
-            parts.add(seconds + " " + plural(seconds, "секунда", "секунды", "секунд"));
+        if (seconds > 0 || sb.isEmpty()) {
+            if (!sb.isEmpty()) sb.append(' ');
+            sb.append(seconds).append(' ').append(plural(seconds, "секунда", "секунды", "секунд"));
         }
 
-        return String.join(" ", parts);
+        return sb.toString();
     }
 
     private static String plural(long value, String one, String few, String many) {

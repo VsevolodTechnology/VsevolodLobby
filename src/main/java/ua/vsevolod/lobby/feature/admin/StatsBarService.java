@@ -11,6 +11,7 @@ import ua.vsevolod.lobby.util.Text;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,16 +23,19 @@ public final class StatsBarService {
         return INSTANCE;
     }
 
-    // Audit MED-04: maps were keyed by Player (strong reference). If a player was kicked during
-    // configuration phase before PlayerDisconnectEvent fired (or any other rare cleanup miss)
-    // the entry pinned the Player + its network connection forever. UUID is the canonical
-    // identity used everywhere else in the codebase; the Player is resolved lazily for sends.
     private final Map<UUID, BossBar> tpsBars = new ConcurrentHashMap<>();
-    private final Map<UUID, BossBar> ramBars = new ConcurrentHashMap<>();
+
+    private final BossBar ramBar = BossBar.bossBar(
+            Text.raw("&eRAM: ..."),
+            0.0f,
+            BossBar.Color.BLUE,
+            BossBar.Overlay.PROGRESS
+    );
+    private final Set<UUID> ramViewers = ConcurrentHashMap.newKeySet();
 
     /** Skip-if-unchanged caches. */
     private final Map<UUID, String> lastTpsLabel = new ConcurrentHashMap<>();
-    private final Map<UUID, String> lastRamLabel = new ConcurrentHashMap<>();
+    private String lastRamLabel = "";
 
     private boolean registered = false;
 
@@ -48,10 +52,10 @@ public final class StatsBarService {
             UUID id = event.getPlayer().getUuid();
             BossBar t = tpsBars.remove(id);
             if (t != null) event.getPlayer().hideBossBar(t);
-            BossBar r = ramBars.remove(id);
-            if (r != null) event.getPlayer().hideBossBar(r);
+            if (ramViewers.remove(id)) {
+                event.getPlayer().hideBossBar(ramBar);
+            }
             lastTpsLabel.remove(id);
-            lastRamLabel.remove(id);
         });
 
         MinecraftServer.getSchedulerManager()
@@ -80,25 +84,18 @@ public final class StatsBarService {
 
     public boolean toggleRam(Player player) {
         UUID id = player.getUuid();
-        BossBar existing = ramBars.remove(id);
-        if (existing != null) {
-            player.hideBossBar(existing);
+        if (!ramViewers.add(id)) {
+            ramViewers.remove(id);
+            player.hideBossBar(ramBar);
             return false;
         }
-        BossBar bar = BossBar.bossBar(
-                Text.raw("&eRAM: ..."),
-                0.0f,
-                BossBar.Color.BLUE,
-                BossBar.Overlay.PROGRESS
-        );
-        ramBars.put(id, bar);
-        player.showBossBar(bar);
+        player.showBossBar(ramBar);
         return true;
     }
 
     private void tick() {
         boolean haveTps = !tpsBars.isEmpty();
-        boolean haveRam = !ramBars.isEmpty();
+        boolean haveRam = !ramViewers.isEmpty();
         if (!haveTps && !haveRam) return;
 
         var connectionManager = MinecraftServer.getConnectionManager();
@@ -162,14 +159,11 @@ public final class StatsBarService {
                     Locale.US,
                     "&#FFE259ʀᴀᴍ: %s%d ᴍʙ &7/ &f%d ᴍʙ &7(&f%.1f%%&7)",
                     ramColorTag, usedMB, maxMB, ramRatio * 100.0);
-            for (Map.Entry<UUID, BossBar> entry : ramBars.entrySet()) {
-                if (ramLabel.equals(lastRamLabel.get(entry.getKey()))) continue;
-                if (connectionManager.getOnlinePlayerByUuid(entry.getKey()) == null) continue;
-                lastRamLabel.put(entry.getKey(), ramLabel);
-                BossBar bar = entry.getValue();
-                bar.name(Text.raw(ramLabel));
-                bar.progress(ramProgress);
-                bar.color(ramColor);
+            if (!ramLabel.equals(lastRamLabel)) {
+                lastRamLabel = ramLabel;
+                ramBar.name(Text.raw(ramLabel));
+                ramBar.progress(ramProgress);
+                ramBar.color(ramColor);
             }
         }
     }

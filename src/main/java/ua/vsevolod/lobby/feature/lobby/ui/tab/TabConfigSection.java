@@ -33,24 +33,28 @@ public final class TabConfigSection implements ConfigSection<TabConfig> {
 
     private static final String TEMPLATE = """
             # ====================================================
-            # Tab list (player list header & footer) configuration
+            # Таблица игроков (шапка и подвал TAB-листа) — tab.yml
             # ====================================================
-            # Edit this file then run /reload to apply without restarting the server.
+            # После изменения файла выполни /reload — применяется без перезапуска сервера.
             #
-            # Placeholders inside header/footer lines:
-            #   {ping}    — receiving player's ping (ms)
-            #   {online}  — total online players
-            #   {time}    — server local time formatted by `time-format` below
-            #   {mspt}    — for BYPASS players: rendered via `mspt-bypass-template`;
-            #               for others: empty string
+            # Плейсхолдеры, доступные в строках header и footer:
+            #   {ping}    — пинг игрока в миллисекундах
+            #   {online}  — общее число игроков онлайн
+            #   {time}    — текущее время сервера (формат задаётся в time-format)
+            #   {mspt}    — только для операторов (BYPASS): MSPT через mspt-bypass-template;
+            #               для остальных игроков — пустая строка
             #
-            # NOTE: {player} is intentionally NOT supported in the tab list — the renderer
-            # groups players with identical (bypass, ping-bucket) text into one packet send
-            # to keep MSPT low. Player names go into the player-info entries themselves.
+            # Плейсхолдер {player} НЕ поддерживается — рендерер группирует игроков
+            # с одинаковым текстом в один пакет, чтобы снизить нагрузку на сервер.
 
+            # Как часто обновляется TAB-лист (в миллисекундах). 100 = 10 раз в секунду.
             update-interval-ms: 100
+
+            # Формат времени для плейсхолдера {time}. Примеры: "HH:mm", "HH:mm:ss".
             time-format: "HH:mm"
 
+            # Шапка TAB-листа (строки над списком игроков).
+            # Цветовые коды: &X (стандартные), &#RRGGBB (HEX). Пустая строка "" = пустой отступ.
             header:
               - ""
               - "&#FF9700&lOVERDYN"
@@ -59,11 +63,14 @@ public final class TabConfigSection implements ConfigSection<TabConfig> {
               - ""
               - "&#FF9700↶ &#FFF2E0Список игроков &#FF9700↷"
               - ""
+
+            # Подвал TAB-листа (строки под списком игроков).
             footer:
               - ""
               - ""
 
-            # Rendered only for BYPASS users (ops). {mspt} substituted at runtime.
+            # Шаблон MSPT-строки — показывается только операторам (BYPASS_USERS в коде).
+            # {mspt} — миллисекунд на тик (чем меньше, тем лучше; норма ≤ 50).
             mspt-bypass-template: " &#FFF2E0MSPT: &e{mspt}"
             """;
 

@@ -5,7 +5,6 @@ import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.item.ItemStack;
 import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistration;
-
 public final class LobbyModeMenuItemListener implements LobbyEventRegistration {
 
     private final LobbyModeSelectorMenu menu;

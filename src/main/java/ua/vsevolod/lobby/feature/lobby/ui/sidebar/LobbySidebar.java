@@ -32,19 +32,11 @@ public final class LobbySidebar {
     private Task animationTask;
     private Task refreshTask;
 
-    /**
-     * Last-rendered global-line texts → skip resend if unchanged.
-     * <p>Concurrent because writes happen from both the refresh scheduler task and the player
-     * event thread (via {@link #show(Player)} → {@code buildLayout}-style line registrations) —
-     * a plain HashMap here would risk a CME under reload + join contention.
-     */
-    private final Map<String, String> lastGlobalText = new ConcurrentHashMap<>();
-
-    /** Last-rendered per-player ping line. */
-    private final Map<UUID, String> lastPingText = new ConcurrentHashMap<>();
-
-    /** Last rendered title frame string — skip resend if unchanged. */
+    private final Map<String, String>  lastGlobalText = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer>   lastPingValue  = new ConcurrentHashMap<>();
     private String lastTitle = "";
+
+    private String[] renderedFrames = new String[0];
 
     /**
      * Tracks the {@code enabled} value we last reflected to viewers — so {@link #applyEnabledState}
@@ -60,6 +52,7 @@ public final class LobbySidebar {
         this.sidebar = new PerViewerSidebar(Text.c("&#FF9700&lOVERDYN"));
         this.lastEnabledApplied = SidebarConfigSection.INSTANCE.current().enabled();
         buildLayout();
+        preRenderFrames();
         SidebarConfigSection.INSTANCE.addChangeListener(this::rescheduleTasks);
         startAnimationTask();
         startRefreshTask();
@@ -69,10 +62,21 @@ public final class LobbySidebar {
         if (animationTask != null) animationTask.cancel();
         if (refreshTask != null) refreshTask.cancel();
         lastGlobalText.clear();
-        lastPingText.clear();
+        lastPingValue.clear();
         lastTitle = "";
+        preRenderFrames();
         startAnimationTask();
         startRefreshTask();
+    }
+
+    private void preRenderFrames() {
+        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        List<String> frames = cfg.titleFrames();
+        String template = cfg.titleFrameTemplate();
+        renderedFrames = new String[frames.size()];
+        for (int i = 0; i < frames.size(); i++) {
+            renderedFrames[i] = template.replace("{frame}", frames.get(i));
+        }
     }
 
     private void buildLayout() {
@@ -120,12 +124,11 @@ public final class LobbySidebar {
     }
 
     private void tickAnimation() {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        if (!cfg.enabled()) return;
-        List<String> frames = cfg.titleFrames();
-        if (frames.isEmpty()) return;
-        int i = animationIndex.getAndUpdate(old -> (old + 1) % frames.size());
-        String rendered = cfg.titleFrameTemplate().replace("{frame}", frames.get(i));
+        if (!SidebarConfigSection.INSTANCE.current().enabled()) return;
+        String[] frames = renderedFrames;
+        if (frames.length == 0) return;
+        int i = animationIndex.getAndUpdate(old -> (old + 1) % frames.length);
+        String rendered = frames[i];
         if (rendered.equals(lastTitle)) return;
         lastTitle = rendered;
         sidebar.setTitle(Text.raw(rendered));
@@ -135,6 +138,9 @@ public final class LobbySidebar {
         SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
         applyEnabledState(cfg);
         if (!cfg.enabled()) return;
+
+        var onlinePlayers = MinecraftServer.getConnectionManager().getOnlinePlayers();
+        if (onlinePlayers.isEmpty()) return;
 
         updateGlobalLine(ID_WELCOME, cfg.welcomeText());
         for (int i = 0; i < cfg.descriptionLines().size(); i++) {
@@ -146,8 +152,9 @@ public final class LobbySidebar {
             updateGlobalLine(serverLineId(server), formatServerLine(server, cfg));
         }
 
-        for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
-            updatePing(player);
+        String pingTemplate = cfg.pingTemplate();
+        for (Player player : onlinePlayers) {
+            updatePing(player, pingTemplate);
         }
     }
 
@@ -179,20 +186,22 @@ public final class LobbySidebar {
     public void show(Player player) {
         if (!SidebarConfigSection.INSTANCE.current().enabled()) return;
         sidebar.addViewer(player);
-        updatePing(player);
+        updatePing(player, SidebarConfigSection.INSTANCE.current().pingTemplate());
     }
 
     public void hide(Player player) {
+        UUID uuid = player.getUuid();
         sidebar.removeViewer(player);
-        lastPingText.remove(player.getUuid());
+        lastPingValue.remove(uuid);
     }
 
-    public void updatePing(Player player) {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        String rendered = cfg.pingTemplate().replace("{ping}", Integer.toString(player.getLatency()));
-        String previous = lastPingText.get(player.getUuid());
-        if (rendered.equals(previous)) return;
-        lastPingText.put(player.getUuid(), rendered);
+    private void updatePing(Player player, String pingTemplate) {
+        UUID uuid = player.getUuid();
+        int latency = player.getLatency();
+        Integer prev = lastPingValue.get(uuid);
+        if (prev != null && prev == latency) return;
+        lastPingValue.put(uuid, latency);
+        String rendered = pingTemplate.replace("{ping}", Integer.toString(latency));
         sidebar.updateLineContent(ID_PING, Text.raw(rendered), player);
     }
 

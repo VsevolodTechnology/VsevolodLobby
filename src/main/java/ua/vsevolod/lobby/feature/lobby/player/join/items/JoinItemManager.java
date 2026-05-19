@@ -11,24 +11,33 @@ import ua.vsevolod.lobby.util.Text;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Builds and gives out the configured hotbar items on join. Each item carries
- * {@link #JOIN_ITEM_ID} so {@link JoinItemUseListener} can dispatch its click action.
- */
 public final class JoinItemManager {
 
     public static final Tag<String> JOIN_ITEM_ID = Tag.String("lobby-join-item");
 
+    private static volatile JoinItemsConfig lastConfig;
+    private static final Map<String, ItemStack> itemCache = new ConcurrentHashMap<>();
+
     private JoinItemManager() {}
 
-    /** Give all items whose {@code condition} matches this player. */
     public static void giveAll(Player player) {
-        boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
-        for (JoinItemDefinition def : JoinItemsConfigSection.INSTANCE.current().items()) {
-            if (!matchesCondition(def.condition(), bypass)) continue;
-            player.getInventory().setItemStack(def.slot(), buildItem(def));
+        JoinItemsConfig cfg = JoinItemsConfigSection.INSTANCE.current();
+        if (cfg != lastConfig) {
+            itemCache.clear();
+            lastConfig = cfg;
         }
+        boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
+        for (JoinItemDefinition def : cfg.items()) {
+            if (!matchesCondition(def.condition(), bypass)) continue;
+            player.getInventory().setItemStack(def.slot(), cachedItem(def));
+        }
+    }
+
+    private static ItemStack cachedItem(JoinItemDefinition def) {
+        return itemCache.computeIfAbsent(def.id(), k -> buildItem(def));
     }
 
     private static boolean matchesCondition(JoinItemDefinition.Condition cond, boolean bypass) {

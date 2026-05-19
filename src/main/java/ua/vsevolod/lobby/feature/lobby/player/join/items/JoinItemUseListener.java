@@ -8,8 +8,10 @@ import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.item.ItemStack;
 import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistration;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcActionExecutor;
-
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Dispatches click actions for items tagged with {@link JoinItemManager#JOIN_ITEM_ID}.
@@ -18,7 +20,10 @@ import java.util.Optional;
  */
 public final class JoinItemUseListener implements LobbyEventRegistration {
 
+    private static final long COOLDOWN_MS = 300;
+
     private final NpcActionExecutor executor;
+    private final Map<UUID, Long> lastUse = new ConcurrentHashMap<>();
 
     public JoinItemUseListener(NpcActionExecutor executor) {
         this.executor = executor;
@@ -33,6 +38,11 @@ public final class JoinItemUseListener implements LobbyEventRegistration {
             if (id == null) return;
 
             event.setCancelled(true);
+
+            long now = System.currentTimeMillis();
+            Long last = lastUse.put(event.getPlayer().getUuid(), now);
+            if (last != null && (now - last) < COOLDOWN_MS) return;
+
             findById(id).map(JoinItemDefinition::rightAction)
                     .ifPresent(action -> executor.execute(event.getPlayer(), action));
         });

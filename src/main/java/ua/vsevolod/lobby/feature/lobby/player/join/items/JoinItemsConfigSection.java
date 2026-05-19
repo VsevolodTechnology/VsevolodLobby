@@ -34,44 +34,54 @@ public final class JoinItemsConfigSection implements ConfigSection<JoinItemsConf
 
     private static final String TEMPLATE = """
             # ====================================================
-            # Hotbar items given on join
+            # Предметы, выдаваемые игроку при входе на лобби — join-items.yml
             # ====================================================
-            # Edit then /reload to apply live.
+            # После изменения файла выполни /reload — применяется без перезапуска.
             #
-            # Per item:
-            #   id         — stable identifier; stored on the ItemStack tag so the listener can find
-            #                the definition on click.
-            #   slot       — hotbar slot (0-8 typical; full inventory 0-35)
-            #   material   — minecraft material name (compass, jukebox, paper, …)
-            #                Accepts "compass" or "minecraft:compass".
-            #   name       — display name (Adventure legacy & codes)
-            #   lore       — list of lines below the name
-            #   glint      — enchanted shimmer
-            #   condition  — always | bypass-only | non-bypass
-            #                Controls WHO gets this item on join.
-            #   actions:
-            #     right    — fires on right-click
-            #     left     — fires on left-click (drop / attack)
+            # Каждый элемент списка items — это один предмет в хотбаре.
             #
-            # Action types (same set as NPCs):
-            #   none, run-command, open-menu, parkour-start
-            # `execute-as-op: true` on `run-command` runs as permission level 4 for that call.
+            # Поля предмета:
+            #   id         — уникальный идентификатор предмета (латинские буквы и дефис).
+            #                Используется внутренне; менять можно, но тогда старый предмет
+            #                перестанет реагировать на клики до следующего входа игрока.
+            #   slot       — слот в инвентаре (0-8 = хотбар; 0-35 = весь инвентарь).
+            #   material   — название материала Minecraft (compass, jukebox, paper и т.д.).
+            #                Принимает "compass" или "minecraft:compass" — оба варианта верны.
+            #   name       — отображаемое название. Поддерживает &X-коды и &#RRGGBB HEX-цвета.
+            #   lore       — список строк описания под названием. Пустой список [] = нет описания.
+            #   glint      — true = зачарованное мерцание, false = без мерцания.
+            #   condition  — кому выдаётся предмет при входе:
+            #                  always       — всем игрокам
+            #                  bypass-only  — только операторам (BYPASS_USERS)
+            #                  non-bypass   — только обычным игрокам (не операторам)
+            #   actions    — действия при кликах:
+            #     right    — действие при нажатии ПКМ
+            #     left     — действие при нажатии ЛКМ / атаке
+            #
+            # Типы действий (actions):
+            #   none                           — ничего не делать
+            #   run-command                    — выполнить команду
+            #     target: "команда"            — текст команды (без /)
+            #     execute-as-op: true/false    — выполнить с правами оператора
+            #   open-menu                      — открыть меню
+            #     target: "id-меню"            — идентификатор меню из menus.yml
+            #   parkour-start                  — начать паркур
 
             items:
-              - id: mode-selector
-                slot: 4
-                material: compass
-                name: "&#F1BB58&lВыбор режима"
+              - id: mode-selector     # Уникальный ID предмета
+                slot: 4               # Слот 4 = центр хотбара (0-8)
+                material: compass     # Материал предмета
+                name: "&#F1BB58&lВыбор режима"  # Название (HEX-цвет + жирный)
                 lore:
-                  - "&7Открывает меню выбора"
+                  - "&7Открывает меню выбора"    # Строки описания (&7 = серый)
                   - "&7доступных режимов."
-                  - ""
-                  - "&e➥ Нажмите, чтобы открыть"
-                glint: false
-                condition: always
+                  - ""                            # Пустая строка = разрыв
+                  - "&e➥ Нажмите, чтобы открыть" # Подсказка (&e = жёлтый)
+                glint: false          # Без зачарованного мерцания
+                condition: always     # Выдаётся всем игрокам
                 actions:
-                  right: { type: open-menu, target: mode-selector }
-                  left:  { type: none }
+                  right: { type: open-menu, target: mode-selector }  # ПКМ — открыть меню mode-selector
+                  left:  { type: none }                               # ЛКМ — ничего
             """;
 
     private final AtomicReference<JoinItemsConfig> current = new AtomicReference<>(DEFAULTS);

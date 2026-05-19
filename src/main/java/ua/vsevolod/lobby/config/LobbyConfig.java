@@ -282,7 +282,7 @@ public final class LobbyConfig {
         public static final String LEADERBOARD_FILE_PATH = "storage/parkour/leaderboard.tsv";
         public static final int LEADERBOARD_MAX_ENTRIES = 10;
         public static final long LEADERBOARD_SYNC_MILLIS = 3000L;
-        public static final Pos START_POS = new Pos(0.5, 65.0, 0.5);
+        public static final Pos START_POS = new Pos(8.5, 65.0, 8.5);
         public static final int MAX_VISIBLE_BLOCKS = 4;
         public static final int FAIL_Y = 58;
 
