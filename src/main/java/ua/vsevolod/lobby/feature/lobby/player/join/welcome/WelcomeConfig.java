@@ -23,34 +23,31 @@ import java.util.List;
 @Configuration
 public final class WelcomeConfig {
 
-    private static final Path FILE = Paths.get("config", "welcome.yml");
+    private static final Path FILE = Paths.get("config", "ui", "welcome.yml");
     private static volatile WelcomeConfig instance;
 
     @Comment({
             "Строки приветствия — отправляются в чат при входе на лобби.",
-            "Базовый белый проекта — <#FFF2E0>. Плейсхолдеры: {player} {discord} {telegram} {studio}."
+            "Базовый белый проекта — <#FFF2E0>.",
+            "Плейсхолдеры: {player} {discord} {telegram} {studio}.",
+            "URL-плейсхолдеры читаются из единого файла config/socials.yml."
     })
     public List<String> chatLines = List.of(
             "",
-            "  <gradient:#AE3AF3:#C58AF0><bold>ᴏʀᴊᴜꜱ-ꜱᴛᴜᴅɪᴏ</bold></gradient> <dark_gray>·<#FFF2E0> Привет, <#C58AF0>{player}<#FFF2E0>!",
-            "  <#9C93B0>Меню <dark_gray>— <#C58AF0>/menu <dark_gray>·<#9C93B0> режим <dark_gray>— <#C58AF0>компас в руке",
-            "  <#9C93B0>Соцсети <dark_gray>— "
-                    + "<click:open_url:'{discord}'><hover:show_text:'<#FFF2E0>Открыть Discord'><#7C8CF8><underlined>Discord</underlined></hover></click>"
-                    + " <dark_gray>· "
-                    + "<click:open_url:'{telegram}'><hover:show_text:'<#FFF2E0>Открыть Telegram'><#3FA7E0><underlined>Telegram</underlined></hover></click>"
-                    + " <dark_gray>· "
-                    + "<click:open_url:'{studio}'><hover:show_text:'<#FFF2E0>Открыть сайт'><#C58AF0><underlined>Сайт</underlined></hover></click>",
+            "     <gradient:#AE3AF3:#C58AF0><bold>ᴏʀᴊᴜꜱ-ꜱᴛᴜᴅɪᴏ</bold></gradient>  <dark_gray>›<#FFF2E0> Привет, <#C58AF0><bold>{player}</bold><#FFF2E0>!",
+            "     <#D8CCDE>Главное лобби <dark_gray>·<#D8CCDE> здесь начинается всё интересное",
+            "",
+            "  <#C58AF0>❖<#FFF2E0> Меню режимов  <dark_gray>—<#C58AF0> /menu <dark_gray>или <#C58AF0>компас в руке",
+            "  <#C58AF0>❖<#FFF2E0> Паркур        <dark_gray>—<#C58AF0> NPC у фонтана",
+            "",
+            "     <#9C93B0>Будь с нами:  "
+                    + "<click:open_url:'{discord}'><hover:show_text:'<#5865F2>Discord<#FFF2E0> · сообщество, поддержка, ивенты'><#5865F2>◆ <underlined>Discord</underlined></hover></click>"
+                    + "  <dark_gray>·  "
+                    + "<click:open_url:'{telegram}'><hover:show_text:'<#3FA7E0>Telegram<#FFF2E0> · новости и анонсы'><#3FA7E0>◆ <underlined>Telegram</underlined></hover></click>"
+                    + "  <dark_gray>·  "
+                    + "<click:open_url:'{studio}'><hover:show_text:'<#C58AF0>orjus.ru<#FFF2E0> · официальный сайт студии'><#C58AF0>◆ <underlined>Сайт</underlined></hover></click>",
             ""
     );
-
-    @Comment("Discord-приглашение — подставляется в {discord}.")
-    public String discordUrl = "https://discord.com/invite/BNCXWbHRsC";
-
-    @Comment("Telegram-канал — подставляется в {telegram}.")
-    public String telegramUrl = "https://t.me/OrjusTg";
-
-    @Comment("Сайт студии — подставляется в {studio}.")
-    public String studioUrl = "https://studio.orjus.ru/";
 
     @Comment("Показывать ли анимированный титул на входе.")
     public boolean titleEnabled = true;

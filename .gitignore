@@ -1,18 +1,12 @@
+# ─── Gradle / build artefacts ──────────────────────────────────────────────
 .gradle
 build/
-spark/
-storage/
-proxy.properties
-via/
-viaproxy.log
-server.log
-ngrok.log
+.kotlin
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
-.kotlin
 
-### IntelliJ IDEA ###
+# ─── IDE / editor ──────────────────────────────────────────────────────────
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
@@ -24,7 +18,7 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 
-### Eclipse ###
+# Eclipse
 .apt_generated
 .classpath
 .factorypath
@@ -36,19 +30,39 @@ bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
 
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
 
-### VS Code ###
+# VS Code
 .vscode/
 
-### Mac OS ###
+# ─── OS junk ───────────────────────────────────────────────────────────────
 .DS_Store
-# Reference material and debug artefacts (not part of the project source)
+Thumbs.db
+
+# ─── Runtime / server state (never check into source) ──────────────────────
+spark/
+storage/
+proxy.properties
+via/
+viaproxy.log
+server.log
+ngrok.log
+logs/
+*.log
+
+# ─── Reference material and debug artefacts ───────────────────────────────
 ajParkour-*.jar
-net/
 qrCode.jpg
+
+# Local jar-inspection leftovers (jar xf extracts classes at project root)
+/net/
+/ua/
+/me/
+/com/
+/org/
+*.class

@@ -207,9 +207,9 @@ public final class LobbyTabListManager {
             if (i > 0) sb.append('\n');
             String line = lines.get(i);
             if (line.indexOf('{') < 0) { sb.append(line); continue; }
-            sb.append(line
+            sb.append(ua.vsevolod.lobby.util.Placeholders.apply(line
                     .replace("{online}", Integer.toString(online))
-                    .replace("{state}", state));
+                    .replace("{state}", state)));
         }
         return sb.toString();
     }

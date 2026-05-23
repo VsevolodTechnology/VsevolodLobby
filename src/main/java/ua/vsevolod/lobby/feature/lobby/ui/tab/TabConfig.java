@@ -21,7 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Configuration
 public final class TabConfig {
 
-    private static final Path FILE = Paths.get("config", "tab.yml");
+    private static final Path FILE = Paths.get("config", "ui", "tab.yml");
     private static volatile TabConfig instance;
     private static final List<Runnable> listeners = new CopyOnWriteArrayList<>();
 
@@ -53,7 +53,7 @@ public final class TabConfig {
             "",
             "<#A698C5>онлайн <#FFF2E0>{online}  <dark_gray>•  <#A698C5>пинг <#FFF2E0>{ping}мс  <dark_gray>•  <#A698C5>время <#FFF2E0>{time}",
             "",
-            "<#A698C5>▸ <gradient:#AE3AF3:#985DBC>studio.orjus.ru</gradient><#A698C5> ◂",
+            "<#A698C5>▸ <gradient:#AE3AF3:#985DBC>{website-short}</gradient><#A698C5> ◂",
             ""
     );
 

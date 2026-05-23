@@ -72,34 +72,42 @@ public final class PlayerPreferencesService {
 
     // ── Mutations ─────────────────────────────────────────────────────────────
 
-    public void saveMusicEnabled(UUID uuid, boolean musicEnabled) {
-        PlayerPreferences cur = get(uuid);
-        cache.put(uuid, new PlayerPreferences(musicEnabled, cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
+    public void saveMusicEnabled(UUID uuid, boolean v) {
+        cache.put(uuid, get(uuid).withMusicEnabled(v));
     }
 
-    public void savePlayersHidden(UUID uuid, boolean playersHidden) {
-        PlayerPreferences cur = get(uuid);
-        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), playersHidden, cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
+    public void savePlayersHidden(UUID uuid, boolean v) {
+        cache.put(uuid, get(uuid).withPlayersHidden(v));
     }
 
-    public void saveSidebarHidden(UUID uuid, boolean sidebarHidden) {
-        PlayerPreferences cur = get(uuid);
-        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), sidebarHidden, cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
+    public void saveSidebarHidden(UUID uuid, boolean v) {
+        cache.put(uuid, get(uuid).withSidebarHidden(v));
     }
 
-    public void savePositionSaveEnabled(UUID uuid, boolean positionSaveEnabled) {
-        PlayerPreferences cur = get(uuid);
-        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), positionSaveEnabled, cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
+    public void savePositionSaveEnabled(UUID uuid, boolean v) {
+        cache.put(uuid, get(uuid).withPositionSaveEnabled(v));
     }
 
-    public void saveProtocolWarningEnabled(UUID uuid, boolean protocolWarningEnabled) {
-        PlayerPreferences cur = get(uuid);
-        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), protocolWarningEnabled, cur.firstSeenEpoch(), cur.lastPosition()));
+    public void saveProtocolWarningEnabled(UUID uuid, boolean v) {
+        cache.put(uuid, get(uuid).withProtocolWarningEnabled(v));
     }
 
     public void savePosition(UUID uuid, Pos position) {
-        PlayerPreferences cur = get(uuid);
-        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), position));
+        cache.put(uuid, get(uuid).withLastPosition(position));
+    }
+
+    public void saveTimeByIpEnabled(UUID uuid, boolean v) {
+        cache.put(uuid, get(uuid).withTimeByIpEnabled(v));
+    }
+
+    /** Persist the full parkour-settings tuple in one shot. {@code null}/false values clear the entry. */
+    public void saveParkour(UUID uuid,
+                            @Nullable String difficulty,
+                            @Nullable String theme,
+                            @Nullable String dimension,
+                            boolean training,
+                            @Nullable String sound) {
+        cache.put(uuid, get(uuid).withParkour(difficulty, theme, dimension, training, sound));
     }
 
     /**
@@ -110,7 +118,7 @@ public final class PlayerPreferencesService {
         PlayerPreferences cur = get(uuid);
         if (cur.firstSeenEpoch() != 0L) return cur.firstSeenEpoch();
         long now = System.currentTimeMillis();
-        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), now, cur.lastPosition()));
+        cache.put(uuid, cur.withFirstSeenEpoch(now));
         return now;
     }
 }

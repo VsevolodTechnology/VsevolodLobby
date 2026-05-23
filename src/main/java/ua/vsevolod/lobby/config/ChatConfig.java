@@ -17,7 +17,7 @@ import java.nio.file.Paths;
 @Configuration
 public final class ChatConfig {
 
-    private static final Path CONFIG_FILE = Paths.get("config", "chat.yml");
+    private static final Path CONFIG_FILE = Paths.get("config", "player", "chat.yml");
     private static volatile ChatConfig INSTANCE;
 
     @Comment({

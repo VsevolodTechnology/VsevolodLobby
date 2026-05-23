@@ -27,7 +27,7 @@ import java.util.function.Consumer;
 @Configuration
 public final class ServersConfig {
 
-    private static final Path FILE = Paths.get("config", "servers.yml");
+    private static final Path FILE = Paths.get("config", "network", "servers.yml");
     private static volatile ServersConfig instance;
     private static final List<Consumer<ServersConfig>> listeners = new CopyOnWriteArrayList<>();
 

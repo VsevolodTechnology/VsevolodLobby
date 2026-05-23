@@ -76,18 +76,15 @@ public final class ServerItemRenderer {
     }
 
     private static String fill(String template, ServerInfo server, ServersConfig cfg) {
-        LobbyConfig.Project.SocialLinks links = LobbyConfig.Project.SOCIAL_LINKS;
-        return template
+        String filled = template
                 .replace("{server}", server.id())
                 .replace("{world}", server.worldName())
                 .replace("{version}", server.versionCore())
                 .replace("{status}", server.getStatusName())
                 .replace("{online}", Integer.toString(server.online()))
                 .replace("{max}", Integer.toString(server.maxOnline()))
-                .replace("{bar}", bar(server.online(), server.maxOnline(), cfg))
-                .replace("{website}", links.website())
-                .replace("{telegram}", links.telegram())
-                .replace("{discord}", links.discord());
+                .replace("{bar}", bar(server.online(), server.maxOnline(), cfg));
+        return ua.vsevolod.lobby.util.Placeholders.apply(filled);
     }
 
     /** Builds the {@code {bar}} online indicator as a MiniMessage string. */

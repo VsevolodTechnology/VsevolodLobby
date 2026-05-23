@@ -59,7 +59,7 @@ public final class NpcManager {
 
         // Spawn anything new or freshly-visible.
         List<LobbyNpc> newlySpawned = new ArrayList<>();
-        for (NpcDefinition def : config.npcs) {
+        for (NpcDefinition def : incoming.values()) {
             if (!def.visible()) continue;
             if (!live.containsKey(def.id())) {
                 LobbyNpc npc = spawn(def);
@@ -83,10 +83,8 @@ public final class NpcManager {
         }
 
         lastApplied = config;
-        // Rebuild the by-id index from the new config so subsequent findById is O(1).
-        Map<String, NpcDefinition> rebuilt = new LinkedHashMap<>(incoming.size());
-        for (NpcDefinition def : config.npcs) rebuilt.put(def.id(), def);
-        lastAppliedById = rebuilt;
+        // Index by id for O(1) findById from the EFFECTIVE (merged) set, not just global.
+        lastAppliedById = new LinkedHashMap<>(incoming);
     }
 
     private LobbyNpc spawn(NpcDefinition def) {

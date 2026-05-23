@@ -1,8 +1,12 @@
 package ua.vsevolod.lobby.feature.lobby.interaction.npc;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.entity.Player;
+import ua.vsevolod.lobby.config.SocialsConfig;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcAction;
 import ua.vsevolod.lobby.util.Text;
 
@@ -69,7 +73,68 @@ public final class NpcActionExecutor {
                 p.sendMessage(msg);
             }
         });
+        registerPrefix("url", NpcActionExecutor::sendUrlMessage);
+        registerPrefix("socials", NpcActionExecutor::sendSocialsCard);
         // [connect], [menu], [parkour] are wired in LobbyModule since they need live service refs
+    }
+
+    /**
+     * {@code [socials]} or {@code [socials] <mini-message-header>} — sends a beautifully
+     * formatted multi-link card (Discord, Telegram, website, …) reusing the same layout the
+     * off-hand QR map shows. The optional argument overrides the default header from
+     * {@code qr-card.yml} for the duration of this message — perfect for context-specific
+     * teasers like "✦ Новый режим — следи в наших соцсетях".
+     *
+     * <p>Each link's hover text comes from {@code socials.yml} (per-link description), so the
+     * raw URL is never shown until the player actually clicks.</p>
+     */
+    private static void sendSocialsCard(Player player, String customHeader) {
+        Component card = ua.vsevolod.lobby.feature.lobby.interaction.qr.SocialCardRenderer
+                .render(customHeader == null || customHeader.isBlank() ? null : customHeader);
+        player.sendMessage(card);
+    }
+
+    /**
+     * {@code [url] <link>} — sends a clickable chat message that opens the URL on click.
+     * The link can be a direct URL or a placeholder ({@code {discord}}/{@code {telegram}}/
+     * {@code {website}}) — placeholders resolve from {@code config/socials.yml}.
+     *
+     * <p>Two forms supported:
+     * <ul>
+     *   <li>{@code [url] <link>} — default one-line message ("Кликни, чтобы открыть: …")</li>
+     *   <li>{@code [url] <link> | <mini-message>} — fully custom MiniMessage body; the
+     *       whole message becomes clickable. Placeholders ({@code {discord}}, {@code
+     *       {discord-short}} etc.) work both in the link and the body. Use {@code <newline>}
+     *       in the body for multi-line layouts.</li>
+     * </ul>
+     *
+     * <p>The client always confirms the URL on click for security — we cannot force-open it
+     * server-side, but we can hand the player a ready-to-click link.</p>
+     */
+    private static void sendUrlMessage(Player player, String argument) {
+        if (argument == null || argument.isBlank()) return;
+
+        SocialsConfig socials = SocialsConfig.get();
+        int pipe = argument.indexOf('|');
+        String urlPart = (pipe < 0 ? argument : argument.substring(0, pipe)).trim();
+        String customBody = pipe < 0 ? null : argument.substring(pipe + 1).trim();
+
+        String url = socials.resolve(urlPart);
+        String clickable = url.startsWith("http") ? url : "https://" + url;
+
+        String body;
+        if (customBody == null || customBody.isBlank()) {
+            body = "  <#C58AF0>➥ <#FFF2E0>Кликни, чтобы открыть: <#5865F2><underlined>"
+                    + SocialsConfig.shorten(url) + "</underlined>";
+        } else {
+            body = ua.vsevolod.lobby.util.Placeholders.apply(customBody);
+        }
+
+        Component msg = Text.c(body)
+                .clickEvent(ClickEvent.openUrl(clickable))
+                .hoverEvent(HoverEvent.showText(Text.c("<#C58AF0>▶ <#FFF2E0>" + clickable)))
+                .decoration(TextDecoration.ITALIC, false);
+        player.sendMessage(msg);
     }
 
     // ── Legacy API ────────────────────────────────────────────────────────────

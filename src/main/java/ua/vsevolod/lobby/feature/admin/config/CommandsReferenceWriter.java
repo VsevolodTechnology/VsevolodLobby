@@ -587,9 +587,10 @@ public final class CommandsReferenceWriter {
      * Перезаписывается при каждом запуске — всегда актуален.
      */
     public static void write() {
-        Path file = ConfigReload.CONFIG_DIR.resolve("commands.txt");
+        Path dir = ConfigReload.CONFIG_DIR.resolve("system");
+        Path file = dir.resolve("commands.txt");
         try {
-            Files.createDirectories(ConfigReload.CONFIG_DIR);
+            Files.createDirectories(dir);
             Files.writeString(file, CONTENT, StandardCharsets.UTF_8);
         } catch (IOException e) {
             System.err.println("[CommandsReference] Не удалось записать commands.txt: " + e.getMessage());

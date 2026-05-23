@@ -20,7 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Configuration
 public final class SidebarConfig {
 
-    private static final Path FILE = Paths.get("config", "sidebar.yml");
+    private static final Path FILE = Paths.get("config", "ui", "sidebar.yml");
     private static volatile SidebarConfig instance;
     private static final List<Runnable> listeners = new CopyOnWriteArrayList<>();
 

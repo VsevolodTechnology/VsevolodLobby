@@ -45,6 +45,8 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.3")
     implementation("de.exlll:configlib-yaml:4.8.1")
     implementation("net.kyori:adventure-text-minimessage:4.26.1")
+    implementation("dev.lu15:luckperms-minestom:5.5-SNAPSHOT")
+    implementation("com.h2database:h2:2.2.224")
 }
 
 tasks.test {

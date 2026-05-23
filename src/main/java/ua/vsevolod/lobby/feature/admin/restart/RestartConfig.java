@@ -19,7 +19,7 @@ import java.nio.file.Paths;
 @Configuration
 public final class RestartConfig {
 
-    private static final Path CONFIG_FILE = Paths.get("config", "restart.yml");
+    private static final Path CONFIG_FILE = Paths.get("config", "system", "restart.yml");
     private static volatile RestartConfig INSTANCE;
 
     @Comment("Default countdown (seconds) when /restart is invoked without arguments.")

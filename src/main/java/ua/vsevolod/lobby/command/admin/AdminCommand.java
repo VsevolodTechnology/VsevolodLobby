@@ -42,8 +42,13 @@ public abstract class AdminCommand extends Command {
     }
 
     public static boolean isAdmin(CommandSender sender) {
-        return sender instanceof Player p
-                && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername());
+        if (!(sender instanceof Player p)) return false;
+        // Hardcoded owners always pass — they're the "break glass" if LP misbehaves or is off.
+        if (LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())) return true;
+        // Optional LP integration — when enabled, anyone with the configured admin perm passes too.
+        return ua.vsevolod.lobby.integration.luckperms.LuckPermsService.hasPermission(
+                p.getUuid(),
+                ua.vsevolod.lobby.integration.luckperms.LuckPermsService.adminPermission());
     }
 
     public static boolean isAdminOrConsole(CommandSender sender) {

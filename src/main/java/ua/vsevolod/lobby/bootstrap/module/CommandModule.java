@@ -5,6 +5,7 @@ import ua.vsevolod.lobby.command.admin.ChatCommand;
 import ua.vsevolod.lobby.command.admin.DeopCommand;
 import ua.vsevolod.lobby.command.admin.GamemodeCommand;
 import ua.vsevolod.lobby.command.admin.KickCommand;
+import ua.vsevolod.lobby.command.admin.MaxPlayersCommand;
 import ua.vsevolod.lobby.command.admin.OpCommand;
 import ua.vsevolod.lobby.command.admin.RamBarCommand;
 import ua.vsevolod.lobby.command.admin.ReloadCommand;
@@ -31,6 +32,7 @@ public class CommandModule implements Module {
         new OpCommand();
         new DeopCommand();
         new KickCommand();
+        new MaxPlayersCommand();
         new TpsBarCommand();
         new RamBarCommand();
         new VersionCommand();

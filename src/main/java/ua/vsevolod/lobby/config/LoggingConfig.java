@@ -18,7 +18,7 @@ import java.time.ZoneId;
 @Configuration
 public final class LoggingConfig {
 
-    private static final Path CONFIG_FILE = Paths.get("config", "logging.yml");
+    private static final Path CONFIG_FILE = Paths.get("config", "system", "logging.yml");
 
     @Comment({
             "Java time-zone id used for timestamps in console / log files.",

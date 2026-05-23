@@ -20,7 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Configuration
 public final class MenusConfig {
 
-    private static final Path FILE = Paths.get("config", "menus.yml");
+    private static final Path FILE = Paths.get("config", "ui", "menus.yml");
     private static volatile MenusConfig instance;
     private static final List<Consumer<MenusConfig>> listeners = new CopyOnWriteArrayList<>();
 
@@ -66,19 +66,43 @@ public final class MenusConfig {
                 "grass_block", null, List.of(), false,
                 List.of(), List.of(), "adventur"));
         // "Coming soon" teasers flanking the live server.
+        // Left/right click sends the Discord URL as a clickable chat message via the [url] prefix
+        // (resolved against config/socials.yml).
         MenuItem soon = new MenuItem(
                 List.of(20, 24),
-                "gray_dye",
-                "<#9C93B0><bold>Новый режим</bold>",
+                "amethyst_shard",
+                "<gradient:#AE3AF3:#C58AF0><bold>✦ Новый режим</bold></gradient>",
                 List.of(
                         " ",
-                        "  <#AE3AF3>«Скоро»",
-                        "   <#9C93B0>›<#FFF2E0> Здесь появится новый режим —",
-                        "   <#9C93B0>›<#FFF2E0> он уже в активной разработке",
+                        "  <#C58AF0>«Скоро»",
+                        "   <#9C93B0>›<#FFF2E0> Здесь появится новый режим",
+                        "   <#9C93B0>›<#FFF2E0> со своей атмосферой и правилами",
                         " ",
-                        "  <#C58AF0>➥ <#9C93B0>Следи за новостями в Discord"
+                        "  <#C58AF0>«В разработке»",
+                        "   <#9C93B0>›<#FFF2E0> Уже строим миры и пишем код,",
+                        "   <#9C93B0>›<#FFF2E0> продумываем механики и экономику",
+                        " ",
+                        " <#D9A6F0>⚠ <#FFF2E0>Точную дату не называем —",
+                        "   <#9C93B0>чтобы не сорвать ваши ожидания.",
+                        " ",
+                        "  <#C58AF0>➥ <#FFF2E0>Кликни — откроем Discord с анонсами"
                 ),
-                false, List.of(), List.of(), null);
+                true,
+                List.of(
+                        "[close]",
+                        "[socials] "
+                                + "     <gradient:#AE3AF3:#C58AF0><bold>✦ Новый режим</bold></gradient>"
+                                + "<newline>"
+                                + "     <#D8CCDE>Уже строим миры и пишем код — следи за анонсами:"
+                ),
+                List.of(
+                        "[close]",
+                        "[socials] "
+                                + "     <gradient:#AE3AF3:#C58AF0><bold>✦ Новый режим</bold></gradient>"
+                                + "<newline>"
+                                + "     <#D8CCDE>Уже строим миры и пишем код — следи за анонсами:"
+                ),
+                null);
         items.put("soon", soon);
 
         Map<String, MenuDefinition> out = new LinkedHashMap<>();

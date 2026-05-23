@@ -80,6 +80,21 @@ public final class LobbyConfig {
          *  Read from proxy.properties at startup; update via ProxyConfig.load(). */
         public static volatile int MAX_PLAYERS = 100;
 
+        /** When true, the MOTD-displayed max grows with the real online count (see formula below). */
+        public static volatile boolean DYNAMIC_MAX_ENABLED = true;
+        /** Lowest "displayed max" shown in the server list — pretty floor when online is tiny. */
+        public static volatile int DISPLAY_BASELINE = 10;
+        /** Buffer over current online count — display = min(MAX_PLAYERS, max(DISPLAY_BASELINE, online + DISPLAY_HEADROOM)). */
+        public static volatile int DISPLAY_HEADROOM = 3;
+
+        /** The number we actually advertise in the server-list ping (and TAB {max} if used). */
+        public static int displayedMax(int online) {
+            int hard = MAX_PLAYERS;
+            if (!DYNAMIC_MAX_ENABLED) return hard;
+            int grown = Math.max(DISPLAY_BASELINE, online + DISPLAY_HEADROOM);
+            return Math.min(hard, grown);
+        }
+
         public static final GameMode DEFAULT_GAME_MODE = GameMode.ADVENTURE;
         public static final String IDENTIFIER_VELOCITY_MESSAGE = "vsevolod_lobby_protocol";
         public static final Tag<Integer> IDENTIFIER_CLIENT_PROTOCOL =

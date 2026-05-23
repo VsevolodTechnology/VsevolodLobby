@@ -21,7 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Configuration
 public final class HologramsConfig {
 
-    private static final Path FILE = Paths.get("config", "holograms.yml");
+    private static final Path FILE = Paths.get("config", "ui", "holograms.yml");
     private static volatile HologramsConfig instance;
     private static final List<Consumer<HologramsConfig>> listeners = new CopyOnWriteArrayList<>();
 
@@ -49,8 +49,8 @@ public final class HologramsConfig {
                         "",
                         "<#FFF2E0>Сейчас онлайн <#C58AF0>{online} <bold>человек!",
                         "",
-                        "<#FFF2E0>Telegram → <#C58AF0>t.me/OrjusTg",
-                        "<#FFF2E0>Сайт → <#C58AF0>studio.orjus.ru"
+                        "<#FFF2E0>Telegram → <#C58AF0>{telegram-short}",
+                        "<#FFF2E0>Сайт → <#C58AF0>{website-short}"
                 ),
                 "fixed",
                 1.2, 1.2, 1.2,
@@ -62,7 +62,14 @@ public final class HologramsConfig {
                 0.5, 81.8, -29.5,
                 List.of(
                         "<gradient:#AE3AF3:#C58AF0><bold>ВЫБОР РЕЖИМА</bold></gradient>",
-                        "<#A698C5>нажми, чтобы открыть меню"
+                        "",
+                        "<#FFF2E0>Каждый режим — <#C58AF0>отдельный мир<#FFF2E0>,",
+                        "<#FFF2E0>со своей <#C58AF0>атмосферой<#FFF2E0>, правилами и историей.",
+                        "",
+                        "<#9A8E7A>Зайди в один из режимов и проведи время с пользой —",
+                        "<#9A8E7A>каждый из них уникален по-своему.",
+                        "",
+                        "<#AE3AF3>▸ <#C58AF0>нажми ПКМ по NPC<#FFF2E0>, чтобы открыть меню режимов"
                 ),
                 "fixed",
                 0.95, 0.95, 0.95,

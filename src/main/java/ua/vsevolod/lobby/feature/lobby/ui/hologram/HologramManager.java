@@ -124,7 +124,8 @@ public final class HologramManager {
     private static Component combinedText(HologramDefinition def) {
         int online = MinecraftServer.getConnectionManager().getOnlinePlayerCount();
         Component combined = null;
-        for (String line : def.lines()) {
+        for (String raw : def.lines()) {
+            String line = ua.vsevolod.lobby.util.Placeholders.apply(raw);
             Component c = line.contains(ONLINE_PLACEHOLDER)
                     ? Text.raw(line.replace(ONLINE_PLACEHOLDER, Integer.toString(online)))
                     : Text.c(line);

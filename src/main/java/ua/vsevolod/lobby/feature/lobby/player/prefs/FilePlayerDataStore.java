@@ -64,7 +64,20 @@ public final class FilePlayerDataStore implements PlayerDataStore {
             } catch (NumberFormatException ignored) {}
         }
 
-        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, protocolWarningEnabled, firstSeenEpoch, pos);
+        boolean timeByIpEnabled = bool(props, "timeByIpEnabled", false);
+        String parkourDifficulty = nullable(props, "parkourDifficulty");
+        String parkourTheme      = nullable(props, "parkourTheme");
+        String parkourDimension  = nullable(props, "parkourDimension");
+        boolean parkourTraining  = bool(props, "parkourTraining", false);
+        String parkourSound      = nullable(props, "parkourSound");
+
+        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, protocolWarningEnabled, firstSeenEpoch, pos,
+                timeByIpEnabled, parkourDifficulty, parkourTheme, parkourDimension, parkourTraining, parkourSound);
+    }
+
+    private static String nullable(Properties props, String key) {
+        String v = props.getProperty(key);
+        return (v == null || v.isBlank()) ? null : v;
     }
 
     private static long parseLong(String s, long fallback) {
@@ -81,6 +94,12 @@ public final class FilePlayerDataStore implements PlayerDataStore {
         props.setProperty("positionSaveEnabled", String.valueOf(prefs.positionSaveEnabled()));
         props.setProperty("protocolWarningEnabled", String.valueOf(prefs.protocolWarningEnabled()));
         props.setProperty("firstSeenEpoch", String.valueOf(prefs.firstSeenEpoch()));
+        props.setProperty("timeByIpEnabled", String.valueOf(prefs.timeByIpEnabled()));
+        props.setProperty("parkourTraining", String.valueOf(prefs.parkourTraining()));
+        if (prefs.parkourDifficulty() != null) props.setProperty("parkourDifficulty", prefs.parkourDifficulty());
+        if (prefs.parkourTheme() != null)      props.setProperty("parkourTheme",      prefs.parkourTheme());
+        if (prefs.parkourDimension() != null)  props.setProperty("parkourDimension",  prefs.parkourDimension());
+        if (prefs.parkourSound() != null)      props.setProperty("parkourSound",      prefs.parkourSound());
 
         Pos pos = prefs.lastPosition();
         if (pos != null) {

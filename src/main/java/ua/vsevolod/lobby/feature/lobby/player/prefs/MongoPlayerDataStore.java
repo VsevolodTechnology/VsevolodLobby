@@ -67,7 +67,15 @@ public final class MongoPlayerDataStore implements PlayerDataStore {
             } catch (Exception ignored) {}
         }
 
-        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, protocolWarningEnabled, firstSeenEpoch, pos);
+        boolean timeByIpEnabled  = doc.getBoolean("timeByIpEnabled", false);
+        String  parkourDifficulty = doc.getString("parkourDifficulty");
+        String  parkourTheme      = doc.getString("parkourTheme");
+        String  parkourDimension  = doc.getString("parkourDimension");
+        boolean parkourTraining   = doc.getBoolean("parkourTraining", false);
+        String  parkourSound      = doc.getString("parkourSound");
+
+        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, protocolWarningEnabled, firstSeenEpoch, pos,
+                timeByIpEnabled, parkourDifficulty, parkourTheme, parkourDimension, parkourTraining, parkourSound);
     }
 
     @Override
@@ -78,7 +86,13 @@ public final class MongoPlayerDataStore implements PlayerDataStore {
                 .append("sidebarHidden", prefs.sidebarHidden())
                 .append("positionSaveEnabled", prefs.positionSaveEnabled())
                 .append("protocolWarningEnabled", prefs.protocolWarningEnabled())
-                .append("firstSeenEpoch", prefs.firstSeenEpoch());
+                .append("firstSeenEpoch", prefs.firstSeenEpoch())
+                .append("timeByIpEnabled", prefs.timeByIpEnabled())
+                .append("parkourTraining", prefs.parkourTraining())
+                .append("parkourDifficulty", prefs.parkourDifficulty())
+                .append("parkourTheme",      prefs.parkourTheme())
+                .append("parkourDimension",  prefs.parkourDimension())
+                .append("parkourSound",      prefs.parkourSound());
 
         Pos pos = prefs.lastPosition();
         if (pos != null) {

@@ -21,8 +21,9 @@ public final class LobbyQrMapService {
      */
     public static void preinit() {
         QrCardConfig cfg = QrCardConfig.get();
+        String qrUrl = ua.vsevolod.lobby.config.SocialsConfig.get().resolve(cfg.qrUrl);
         packet = LobbyQrMapRenderer.createPacket(
-                LobbyQrMapItem.MAP_ID, cfg.qrUrl, cfg.imageFile);
+                LobbyQrMapItem.MAP_ID, qrUrl, cfg.imageFile);
     }
 
     public static void give(Player player) {

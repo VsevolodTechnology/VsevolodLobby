@@ -19,7 +19,7 @@ import java.util.List;
 @Configuration
 public final class CutsceneConfig {
 
-    private static final Path FILE = Paths.get("config", "cutscene.yml");
+    private static final Path FILE = Paths.get("config", "player", "cutscene.yml");
     private static volatile CutsceneConfig instance;
 
     @Comment("Главный выключатель кат-сцены.")

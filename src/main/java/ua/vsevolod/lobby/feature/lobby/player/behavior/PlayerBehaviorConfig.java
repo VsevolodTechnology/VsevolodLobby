@@ -15,7 +15,7 @@ import java.nio.file.Paths;
 @Configuration
 public final class PlayerBehaviorConfig {
 
-    private static final Path FILE = Paths.get("config", "player-behavior.yml");
+    private static final Path FILE = Paths.get("config", "player", "player-behavior.yml");
     private static volatile PlayerBehaviorConfig instance;
 
     @Comment({

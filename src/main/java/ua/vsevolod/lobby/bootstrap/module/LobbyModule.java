@@ -49,15 +49,16 @@ public class LobbyModule implements Module {
         // Override to always show the configured MAX_PLAYERS regardless of current online count.
         events.addListener(ServerListPingEvent.class, event -> {
             int online = MinecraftServer.getConnectionManager().getOnlinePlayerCount();
-            int max = LobbyConfig.Settings.MAX_PLAYERS;
+            int displayedMax = LobbyConfig.Settings.displayedMax(online);
             Status current = event.getStatus();
             event.setStatus(Status.builder(current)
-                    .playerInfo(online, max)
+                    .playerInfo(online, displayedMax)
                     .build());
         });
 
         new LobbyTabListManager(events);
-        new ua.vsevolod.lobby.feature.lobby.player.time.PlayerTimeZoneService().register(events);
+        // PlayerTimeZoneService is now created inside LobbyEventRegistrar — it needs the
+        // PlayerPreferencesService which doesn't exist until that registrar runs.
         StatsBarService.get().register(events);
         new MsptLogger().register(events);
         VersionGateListener.register(events);

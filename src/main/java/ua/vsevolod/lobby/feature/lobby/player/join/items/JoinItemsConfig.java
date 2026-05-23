@@ -20,7 +20,7 @@ import java.util.List;
 @Configuration
 public final class JoinItemsConfig {
 
-    private static final Path FILE = Paths.get("config", "join-items.yml");
+    private static final Path FILE = Paths.get("config", "ui", "join-items.yml");
     private static volatile JoinItemsConfig instance;
 
     @Comment({

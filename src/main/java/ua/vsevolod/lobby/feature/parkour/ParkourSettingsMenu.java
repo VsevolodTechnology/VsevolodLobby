@@ -83,6 +83,7 @@ public final class ParkourSettingsMenu {
     private final Consumer<Player> onMusicSelect;
     private final Consumer<Player> onLeave;
     private final Predicate<Player> isMusicEnabled;
+    private final ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService prefs;
 
     private record SelectedSettings(
             ParkourDifficulty difficulty,
@@ -112,74 +113,69 @@ public final class ParkourSettingsMenu {
                                Consumer<Player> onMusicToggle,
                                Consumer<Player> onMusicSelect,
                                Consumer<Player> onLeave,
-                               Predicate<Player> isMusicEnabled) {
+                               Predicate<Player> isMusicEnabled,
+                               ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService prefs) {
         this.parkourService = parkourService;
         this.onMusicToggle = onMusicToggle;
         this.onMusicSelect = onMusicSelect;
         this.onLeave = onLeave;
         this.isMusicEnabled = isMusicEnabled;
+        this.prefs = prefs;
     }
 
     // ── Settings accessors ──────────────────────────────────────────────────
 
     private SelectedSettings getSettings(UUID uuid) {
         return selections.computeIfAbsent(uuid, k -> {
-            SelectedSettings saved = loadFromFile(k);
-            return saved != null ? saved : DEFAULT_SETTINGS.withTheme(ParkourTheme.randomTheme());
+            SelectedSettings saved = loadFromPrefs(k);
+            if (saved != null) return saved;
+            // Persist the initial random theme so the same one survives the next relog.
+            SelectedSettings initial = DEFAULT_SETTINGS.withTheme(ParkourTheme.randomTheme());
+            persist(k, initial);
+            return initial;
         });
     }
 
-    // ── Persistence (storage/parkour-prefs.properties) ───────────────────────
+    // ── Persistence (via PlayerPreferencesService → player_data/*.properties) ────
 
-    private static final java.nio.file.Path PREFS_FILE =
-            java.nio.file.Paths.get("storage", "parkour-prefs.properties");
-
-    /** Sets a player's settings and persists them so they survive a restart. */
+    /** Sets a player's settings and persists them so they survive a relog. */
     private void putSettings(UUID uuid, SelectedSettings settings) {
         selections.put(uuid, settings);
         persist(uuid, settings);
     }
 
-    private static synchronized void persist(UUID uuid, SelectedSettings s) {
-        java.util.Properties props = new java.util.Properties();
-        if (java.nio.file.Files.exists(PREFS_FILE)) {
-            try (var in = java.nio.file.Files.newInputStream(PREFS_FILE)) {
-                props.load(in);
-            } catch (Exception ignored) { /* start fresh */ }
-        }
-        props.setProperty(uuid.toString(),
-                s.difficulty().name() + ";" + dimToken(s.dimension())
-                        + ";" + s.training() + ";" + s.sound().name());
-        try {
-            java.nio.file.Files.createDirectories(PREFS_FILE.getParent());
-            try (var out = java.nio.file.Files.newOutputStream(PREFS_FILE)) {
-                props.store(out, "Parkour per-player settings");
-            }
-        } catch (Exception e) {
-            ServerLogger.get().warn("[ParkourSettings] save failed: " + e.getMessage());
-        }
+    private void persist(UUID uuid, SelectedSettings s) {
+        String themeName = s.theme() == null ? null : s.theme().name();
+        prefs.saveParkour(
+                uuid,
+                s.difficulty().name(),
+                themeName,
+                dimToken(s.dimension()),
+                s.training(),
+                s.sound().name());
     }
 
-    private static SelectedSettings loadFromFile(UUID uuid) {
-        if (!java.nio.file.Files.exists(PREFS_FILE)) return null;
-        java.util.Properties props = new java.util.Properties();
-        try (var in = java.nio.file.Files.newInputStream(PREFS_FILE)) {
-            props.load(in);
-        } catch (Exception e) {
-            return null;
-        }
-        String value = props.getProperty(uuid.toString());
-        if (value == null) return null;
+    private SelectedSettings loadFromPrefs(UUID uuid) {
+        var p = prefs.get(uuid);
+        if (!p.hasParkour()) return null;
         try {
-            String[] p = value.split(";", -1);
+            ParkourTheme theme;
+            if (p.parkourTheme() != null && !p.parkourTheme().isBlank()) {
+                try { theme = ParkourTheme.valueOf(p.parkourTheme()); }
+                catch (IllegalArgumentException e) { theme = ParkourTheme.randomTheme(); }
+            } else {
+                theme = ParkourTheme.randomTheme();
+            }
             return new SelectedSettings(
-                    ParkourDifficulty.valueOf(p[0]),
-                    ParkourTheme.randomTheme(),
-                    tokenToDim(p[1]),
-                    Boolean.parseBoolean(p[2]),
-                    ParkourSoundPreset.valueOf(p[3]));
+                    ParkourDifficulty.valueOf(p.parkourDifficulty()),
+                    theme,
+                    tokenToDim(p.parkourDimension() == null ? "NETHER" : p.parkourDimension()),
+                    p.parkourTraining(),
+                    p.parkourSound() == null
+                            ? ParkourSoundPreset.STANDARD
+                            : ParkourSoundPreset.valueOf(p.parkourSound()));
         } catch (Exception e) {
-            return null; // malformed line — fall back to defaults
+            return null; // malformed value — fall back to defaults
         }
     }
 

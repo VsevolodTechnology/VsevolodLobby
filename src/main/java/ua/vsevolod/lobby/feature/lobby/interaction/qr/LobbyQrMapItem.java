@@ -18,9 +18,10 @@ public final class LobbyQrMapItem {
     private LobbyQrMapItem() {
     }
 
-    /** URL encoded into the QR image — read fresh so {@code qr-card.yml} drives it. */
+    /** URL encoded into the QR image — read fresh so {@code qr-card.yml} drives it.
+     *  Supports {discord}/{telegram}/{website} placeholders resolved from socials.yml. */
     public static String url() {
-        return QrCardConfig.get().qrUrl;
+        return ua.vsevolod.lobby.config.SocialsConfig.get().resolve(QrCardConfig.get().qrUrl);
     }
 
     public static ItemStack create() {

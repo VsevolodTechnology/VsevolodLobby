@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Configuration
 public final class NpcsConfig {
 
-    private static final Path FILE = Paths.get("config", "npcs.yml");
+    private static final Path FILE = Paths.get("config", "world", "npcs.yml");
     private static volatile NpcsConfig instance;
     private static final List<Consumer<NpcsConfig>> listeners = new CopyOnWriteArrayList<>();
 

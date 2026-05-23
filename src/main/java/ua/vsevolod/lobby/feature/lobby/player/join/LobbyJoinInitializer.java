@@ -5,6 +5,7 @@ import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
 import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.config.SocialsConfig;
 import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpcService;
 import ua.vsevolod.lobby.feature.lobby.player.LobbyPlayerProvider;
@@ -126,11 +127,8 @@ public final class LobbyJoinInitializer {
         WelcomeConfig cfg = WelcomeConfig.get();
         if (cfg.chatLines.isEmpty()) return;
 
-        String joined = String.join("\n", cfg.chatLines)
-                .replace("{player}",   player.getUsername())
-                .replace("{discord}",  cfg.discordUrl)
-                .replace("{telegram}", cfg.telegramUrl)
-                .replace("{studio}",   cfg.studioUrl);
+        String joined = ua.vsevolod.lobby.util.Placeholders.apply(
+                String.join("\n", cfg.chatLines).replace("{player}", player.getUsername()));
         player.sendMessage(Text.raw(joined));
     }
 

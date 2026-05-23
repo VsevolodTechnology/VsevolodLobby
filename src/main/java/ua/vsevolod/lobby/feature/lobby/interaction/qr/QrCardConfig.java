@@ -22,7 +22,7 @@ import java.util.List;
 @Configuration
 public final class QrCardConfig {
 
-    private static final Path FILE = Paths.get("config", "qr-card.yml");
+    private static final Path FILE = Paths.get("config", "ui", "qr-card.yml");
     private static volatile QrCardConfig instance;
 
     @Comment("Название предмета-карты в руке.")
@@ -31,9 +31,9 @@ public final class QrCardConfig {
     @Comment("Описание (lore) предмета-карты под названием. Пустой список = без описания.")
     public List<String> itemLore = List.of(
             " ",
-            "<#65D1FC> «Информация»",
-            "<gray> - <#FFF2E0>Все ссылки на наши соцсети,",
-            "<gray> - <#FFF2E0>новости, анонсы и розыгрыши.",
+            "<#C58AF0> «Информация»",
+            "<dark_gray> ›<#FFF2E0> Все ссылки на наши соцсети,",
+            "<dark_gray> ›<#FFF2E0> новости, анонсы и розыгрыши.",
             " ",
             "<#C58AF0>➥ ПКМ — показать ссылки"
     );
@@ -46,41 +46,38 @@ public final class QrCardConfig {
     })
     public String imageFile = "";
 
-    @Comment("URL для генерации QR, если imageFile пустой.")
-    public String qrUrl = "https://studio.orjus.ru/";
+    @Comment({
+            "URL для генерации QR, если imageFile пустой.",
+            "Можно указать плейсхолдер {discord}/{telegram}/{website} — подставится из socials.yml."
+    })
+    public String qrUrl = "{website}";
 
     @Comment("Кулдаун между показами сообщения одним игроком (мс).")
     public long cooldownMs = 1500L;
 
-    @Comment("Первая строка сообщения в чате.")
-    public String header = "  <gradient:#AE3AF3:#C58AF0><bold>Наши социальные сети</bold></gradient>";
+    @Comment({
+            "Шапка сообщения. Используй <newline> для переноса строк.",
+            "Базовый белый — <#FFF2E0>, акцент — <#C58AF0> / <#AE3AF3>."
+    })
+    public String header =
+            "     <gradient:#AE3AF3:#C58AF0><bold>Наши социальные сети</bold></gradient>"
+                    + "<newline>"
+                    + "     <#D8CCDE>Будь с нами на связи — выбери, куда заглянуть.";
+
+    @Comment("Подвал сообщения. Пусто = без подвала. <newline> — перенос строки.")
+    public String footer = "";
 
     @Comment({
             "Шаблон строки ссылки. Плейсхолдеры: {color} {label} {hint} {url}.",
             "Вся строка кликабельна — ссылка открывается кликом, полный URL писать не нужно."
     })
-    public String linkFormat = "   {color}<underlined>{label}</underlined> <dark_gray>— <#9C93B0>{hint}";
-
-    @Comment("Подсказка при наведении на ссылку.")
-    public String hoverText = "<#C58AF0>▶ <#FFF2E0>Открыть в браузере";
+    public String linkFormat = "   {color}◆ <underlined>{label}</underlined>  <dark_gray>—  <#FFF2E0>{hint}";
 
     @Comment({
-            "Список соцсетей. url — чистая ссылка (по ней переход);",
-            "color — цвет иконки (MiniMessage-тег); hint — короткое описание."
+            "Запасной hover, если у конкретной ссылки в socials.yml hover не задан.",
+            "Базовый текст подсказки — БЕЗ URL, чтобы не показывать ссылку."
     })
-    public List<SocialLink> links = List.of(
-            new SocialLink("Discord",  "https://discord.com/invite/BNCXWbHRsC", "<#5865F2>", "наше сообщество"),
-            new SocialLink("Telegram", "https://t.me/OrjusTg",                  "<#3FA7E0>", "новости и анонсы"),
-            new SocialLink("Сайт",     "https://studio.orjus.ru/",              "<#C58AF0>", "наш сайт")
-    );
-
-    /** One social entry: label, the bare URL it opens, an icon colour and a short hint. */
-    public record SocialLink(String label, String url, String color, String hint) {
-        public SocialLink {
-            if (color == null) color = "<#C58AF0>";
-            if (hint == null) hint = "";
-        }
-    }
+    public String hoverText = "<#C58AF0>▶ <#FFF2E0>Кликни, чтобы открыть";
 
     public static QrCardConfig get() {
         QrCardConfig c = instance;

@@ -40,13 +40,15 @@ public final class LobbyParkourService {
             LobbyJoinInitializer joinInitializer,
             ParkourLeaderboardService leaderboardService,
             LobbyMusicManager musicManager,
-            LobbyMusicSelectorMenu musicSelectorMenu
+            LobbyMusicSelectorMenu musicSelectorMenu,
+            ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService preferencesService
     ) {
         this.lobbyInstance = lobbyInstance;
         this.joinInitializer = joinInitializer;
         this.parkourService = new ParkourService(leaderboardService);
         this.settingsMenu = new ParkourSettingsMenu(parkourService,
-                musicManager::toggle, musicSelectorMenu::open, this::returnToLobby, musicManager::isEnabled);
+                musicManager::toggle, musicSelectorMenu::open, this::returnToLobby, musicManager::isEnabled,
+                preferencesService);
     }
 
     public void register(GlobalEventHandler events) {

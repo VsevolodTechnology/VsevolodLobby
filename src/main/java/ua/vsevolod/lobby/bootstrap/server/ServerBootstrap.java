@@ -8,7 +8,10 @@ import ua.vsevolod.lobby.bootstrap.module.InstanceModule;
 import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
 import ua.vsevolod.lobby.bootstrap.module.SparkModule;
 import ua.vsevolod.lobby.config.LoggingConfig;
+import ua.vsevolod.lobby.config.LuckPermsConfig;
 import ua.vsevolod.lobby.config.ProxyConfig;
+import ua.vsevolod.lobby.config.SocialsConfig;
+import ua.vsevolod.lobby.integration.luckperms.LuckPermsService;
 import ua.vsevolod.lobby.config.server.ServersConfig;
 import ua.vsevolod.lobby.feature.admin.config.CommandsReferenceWriter;
 import ua.vsevolod.lobby.util.ServerLogger;
@@ -88,6 +91,7 @@ public class ServerBootstrap {
 
         // All configs are ConfigLib-backed — each init() loads the file and registers a
         // /reload hook with ConfigReload.
+        SocialsConfig.init();
         ServersConfig.init();
         TabConfig.init();
         SidebarConfig.init();
@@ -100,6 +104,12 @@ public class ServerBootstrap {
         CutsceneConfig.init();
         QrCardConfig.init();
         CommandsReferenceWriter.write();
+
+        // Optional LuckPerms integration — gated on config/system/luckperms.yml { enabled: true }.
+        // Must run AFTER Minestom init (it registers events) and BEFORE CommandModule so that
+        // /luckperms is registered together with the rest of our commands.
+        LuckPermsService.init(LuckPermsConfig.load());
+        ua.vsevolod.lobby.bootstrap.LobbyShutdown.register(LuckPermsService::shutdown);
 
         ShutdownHook.register();
         ConsoleListener.start();

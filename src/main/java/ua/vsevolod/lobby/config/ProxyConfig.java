@@ -16,7 +16,7 @@ import java.nio.file.Paths;
 @Configuration
 public final class ProxyConfig {
 
-    private static final Path CONFIG_FILE = Paths.get("config", "proxy.yml");
+    private static final Path CONFIG_FILE = Paths.get("config", "network", "proxy.yml");
 
     @Comment({
             "Velocity modern-forwarding secret — copy the value from Velocity's `forwarding.secret`.",
@@ -36,10 +36,30 @@ public final class ProxyConfig {
     public int hostPort = 25565;
 
     @Comment({
-            "Soft cap shown in the server list MOTD.",
-            "Players in BYPASS_USERS (ops) are never blocked by this limit. Requires restart to apply."
+            "ЖЁСТКИЙ предел — выше него обычные игроки не пройдут login-гейт.",
+            "Игроки из BYPASS_USERS (админы) этот лимит игнорируют — могут зайти даже при 300/300.",
+            "Меняется в игре через /maxplayers <n>."
     })
     public int maxPlayers = 100;
+
+    @Comment({
+            "Динамический MOTD: показанный «макс» растёт вместе с реальным онлайном.",
+            "true  — MOTD показывает min(maxPlayers, max(displayBaseline, online + displayHeadroom)).",
+            "false — MOTD всегда показывает maxPlayers (старое поведение)."
+    })
+    public boolean dynamicMaxEnabled = true;
+
+    @Comment({
+            "Нижняя граница отображаемого максимума.",
+            "Например, при онлайне = 4 и baseline = 10 MOTD покажет 4/10 — не «4/3»."
+    })
+    public int displayBaseline = 10;
+
+    @Comment({
+            "Запас сверху над текущим онлайном.",
+            "При онлайне 12 и headroom 3 MOTD покажет 12/15 — пока не упрётся в maxPlayers."
+    })
+    public int displayHeadroom = 3;
 
     @Comment({
             "Embedded ViaProxy bridge for legacy-client (≤ 1.20) support.",
@@ -95,7 +115,22 @@ public final class ProxyConfig {
             cfg = new ProxyConfig();
         }
         // Propagate to legacy mutable static used by tab/MOTD code paths.
-        LobbyConfig.Settings.MAX_PLAYERS = cfg.maxPlayers;
+        LobbyConfig.Settings.MAX_PLAYERS         = cfg.maxPlayers;
+        LobbyConfig.Settings.DYNAMIC_MAX_ENABLED = cfg.dynamicMaxEnabled;
+        LobbyConfig.Settings.DISPLAY_BASELINE    = cfg.displayBaseline;
+        LobbyConfig.Settings.DISPLAY_HEADROOM    = cfg.displayHeadroom;
         return cfg;
+    }
+
+    /**
+     * Persist a new {@link #maxPlayers} value to {@code config/network/proxy.yml} and update
+     * the in-memory {@link LobbyConfig.Settings#MAX_PLAYERS} so the change is visible
+     * immediately (MOTD, login gate, server-list ping). Used by {@code /maxplayers <n>}.
+     */
+    public static synchronized void setMaxPlayers(int newValue) {
+        ProxyConfig cfg = YamlConfigurations.update(CONFIG_FILE, ProxyConfig.class);
+        cfg.maxPlayers = newValue;
+        YamlConfigurations.save(CONFIG_FILE, ProxyConfig.class, cfg);
+        LobbyConfig.Settings.MAX_PLAYERS = newValue;
     }
 }

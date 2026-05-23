@@ -74,6 +74,9 @@ public final class LobbyEventRegistrar {
         this.launchPadManager = new LaunchPadManager();
         this.preferencesService = createPreferencesService();
         ua.vsevolod.lobby.bootstrap.LobbyShutdown.register(preferencesService::flushAll);
+        // The time-zone service now reads/writes its opt-in via PlayerPreferences — instantiate
+        // here (after the prefs service exists) instead of LobbyModule.load() where it predates it.
+        new ua.vsevolod.lobby.feature.lobby.player.time.PlayerTimeZoneService(preferencesService).register(events);
         this.sidebarToggle = new SidebarToggle(sidebar);
         this.playerHider = new PlayerHider();
         sidebarToggle.setPreferencesService(preferencesService);
@@ -161,7 +164,7 @@ public final class LobbyEventRegistrar {
         );
         LobbyMusicSelectorMenu musicSelectorMenu = new LobbyMusicSelectorMenu(musicManager);
         LobbyParkourService parkourService =
-                new LobbyParkourService(lobbyInstance, joinInitializer, parkourLeaderboardService, musicManager, musicSelectorMenu);
+                new LobbyParkourService(lobbyInstance, joinInitializer, parkourLeaderboardService, musicManager, musicSelectorMenu, preferencesService);
 
         // Now that parkourService exists, wire both the legacy and new-style parkour handlers.
         npcActionExecutor.registerSimple("parkour-start", parkourService::startFromNpc);

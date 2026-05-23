@@ -18,7 +18,7 @@ public final class StorageConfig {
 
     public enum Mode { FILE, MONGODB }
 
-    private static final Path CONFIG_FILE = Paths.get("config", "storage.yml");
+    private static final Path CONFIG_FILE = Paths.get("config", "system", "storage.yml");
     private static volatile StorageConfig INSTANCE;
 
     @Comment("Player preferences storage. Allowed: FILE, MONGODB.")
