@@ -17,14 +17,22 @@ import net.minestom.server.registry.RegistryKey;
 import net.minestom.server.sound.SoundEvent;
 import net.minestom.server.world.DimensionType;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardEntry;
+import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardService;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourRunResult;
+import ua.vsevolod.lobby.util.ServerLogger;
+import ua.vsevolod.lobby.util.Text;
+import net.kyori.adventure.title.Title;
+import net.kyori.adventure.title.TitlePart;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public final class ParkourSession {
 
-    private static final TextColor PARKOUR_ORANGE = TextColor.color(0xF1BB58);
+    private static final TextColor PARKOUR_ORANGE = TextColor.color(0xAE3AF3);
     private static final int FALL_THRESHOLD = 3;
     private static final int BLOCKS_AHEAD = 3;
     private static final int BLOCKS_BEHIND = 0;
@@ -42,12 +50,43 @@ public final class ParkourSession {
     private ParkourTheme theme;
     private final boolean trainingMode;
     private ParkourSoundPreset soundPreset;
+    private final ParkourLeaderboardService leaderboardService;
+
+    /** Brief encouraging titles shown every {@link #TITLE_EVERY} points (title / subtitle). */
+    private static final int TITLE_EVERY = 10;
+    private static final String[][] PROGRESS_TITLES = {
+            {"<#81E366><bold>Красава!",   "<#FFF2E0>так держать темп"},
+            {"<#AE3AF3><bold>Огонь!",     "<#FFF2E0>не сбавляй ход"},
+            {"<#C58AF0><bold>Чётко!",     "<#FFF2E0>ты в потоке"},
+            {"<#A8E063><bold>Вперёд!",    "<#FFF2E0>ещё немного"},
+            {"<#AE3AF3><bold>Машина!",    "<#FFF2E0>тебя не остановить"},
+            {"<#C58AF0><bold>Красиво!",   "<#FFF2E0>идеальный ритм"}
+    };
 
     private static final Component HUD_SCORE_LABEL = Component.text("Очки ", PARKOUR_ORANGE);
     private static final Component HUD_SEPARATOR = Component.text("  •  ", NamedTextColor.DARK_GRAY);
     private static final Component HUD_TIME_LABEL = Component.text("Время ", PARKOUR_ORANGE);
     private static final Component HUD_TRAINING = Component.text("  •  ", NamedTextColor.DARK_GRAY)
             .append(Component.text("Тренировка", NamedTextColor.GRAY));
+
+    // Static messages — built once, reused for every session
+    private static final Component MSG_STARTED = ParkourService.PARKOUR_TEXT
+            .append(Component.text("Паркур начался!", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_ONLY_COMPETITIVE = ParkourService.PARKOUR_TEXT
+            .append(Component.text("Только ", NamedTextColor.GRAY)
+                    .append(Component.text("Соревновательный", TextColor.color(0xAE3AF3)))
+                    .append(Component.text(" режим идёт в статистику и лидерборд.", NamedTextColor.GRAY)));
+    private static final Component MSG_FAIL_HEADER     = ParkourService.PARKOUR_TEXT.append(Component.text("Забег завершен.", NamedTextColor.RED));
+    private static final Component MSG_TRAINING_RESULT = ParkourService.PARKOUR_TEXT.append(Component.text("Тренировочный режим — результат не записан.", NamedTextColor.GRAY));
+    private static final Component MSG_NO_STATS_RESULT = ParkourService.PARKOUR_TEXT.append(Component.text("Режим без статистики — результат не записан.", NamedTextColor.GRAY));
+    private static final Component MSG_REPEATED_BEST   = ParkourService.PARKOUR_TEXT.append(Component.text("Ты повторил свой лучший результат.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_NO_RECORD       = ParkourService.PARKOUR_TEXT.append(Component.text("Пока без рекорда. Посмотрим, что получится с этой попытки.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_PROGRESS_SURPASS = ParkourService.PARKOUR_TEXT.append(Component.text("Ты уже превзошел свой лучший забег.", PARKOUR_ORANGE));
+    private static final Component MSG_PROGRESS_5  = ParkourService.PARKOUR_TEXT.append(Component.text("Хорошее начало. Уже 5 очков.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_PROGRESS_10 = ParkourService.PARKOUR_TEXT.append(Component.text("Темп отличный. Уже 10 очков.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_PROGRESS_15 = ParkourService.PARKOUR_TEXT.append(Component.text("Это уже выше, чем у многих игроков.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_PROGRESS_25 = ParkourService.PARKOUR_TEXT.append(Component.text("Очень сильно. 25 очков держатся далеко не все.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
+    private static final Component MSG_PROGRESS_50 = ParkourService.PARKOUR_TEXT.append(Component.text("Монстр паркура. 50 очков — это мощно.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
 
     private final List<Point> allBlocks = new ArrayList<>();
     private int headIndex = 0;
@@ -75,7 +114,8 @@ public final class ParkourSession {
             ParkourDifficulty difficulty,
             ParkourTheme theme,
             boolean trainingMode,
-            ParkourSoundPreset soundPreset
+            ParkourSoundPreset soundPreset,
+            ParkourLeaderboardService leaderboardService
     ) {
         this.player = player;
         this.instance = instance;
@@ -87,7 +127,9 @@ public final class ParkourSession {
         this.theme = theme;
         this.trainingMode = trainingMode;
         this.soundPreset = soundPreset;
-        this.generator = new ParkourGenerator(theme, difficulty);
+        this.leaderboardService = leaderboardService;
+        Point spawnBlock = new Pos(spawn.blockX(), spawn.blockY() - 1, spawn.blockZ());
+        this.generator = new ParkourGenerator(theme, difficulty, spawnBlock);
     }
 
     public void placeInitialBlocks() {
@@ -113,19 +155,24 @@ public final class ParkourSession {
         player.getInventory().setItemStack(ParkourSettingsMenu.ITEM_SLOT, ParkourSettingsMenu.createItem());
         player.getInventory().setItemStack(ParkourSettingsMenu.LEAVE_SLOT, ParkourSettingsMenu.createLeaveItem());
 
-        player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Паркур начался!", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
+        player.sendMessage(MSG_STARTED);
 
         Component diffLabel = Component.text("Режим: ", NamedTextColor.DARK_GRAY)
                 .append(Component.text(difficulty.displayName(), difficulty.color()));
         if (trainingMode) {
             diffLabel = diffLabel.append(Component.text(" (тренировка, без очков)", NamedTextColor.GRAY));
+        } else if (!difficulty.countsForStats()) {
+            diffLabel = diffLabel.append(Component.text(" (без статистики)", NamedTextColor.GRAY));
         }
         player.sendMessage(ParkourService.PARKOUR_TEXT.append(diffLabel));
 
-        if (!trainingMode) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(bestRecordMessage()));
+        if (!trainingMode && difficulty.countsForStats()) {
+            player.sendMessage(bestRecordMessage());
+        } else if (!trainingMode && !difficulty.countsForStats()) {
+            player.sendMessage(MSG_ONLY_COMPETITIVE);
         }
 
+        ServerLogger.get().sessionStart(player.getUsername(), difficulty.displayName());
         playSound(soundPreset.start());
         sendHud();
     }
@@ -169,7 +216,8 @@ public final class ParkourSession {
 
     void swapTheme(ParkourTheme newTheme) {
         this.theme = newTheme;
-        this.generator = new ParkourGenerator(newTheme, difficulty);
+        Point spawnBlock = new Pos(spawn.blockX(), spawn.blockY() - 1, spawn.blockZ());
+        this.generator = new ParkourGenerator(newTheme, difficulty, spawnBlock);
         for (int i = headIndex; i < allBlocks.size(); i++) {
             Point block = allBlocks.get(i);
             instance.setBlock(block.blockX(), block.blockY(), block.blockZ(), newTheme.randomBlock());
@@ -192,6 +240,35 @@ public final class ParkourSession {
 
         spawnLandingEffect();
         sendProgressMessage();
+        showProgressTitle();
+        checkOvertake();
+    }
+
+    /** Brief, non-intrusive encouraging title every {@link #TITLE_EVERY} points. */
+    private void showProgressTitle() {
+        if (score <= 0 || score % TITLE_EVERY != 0) return;
+        String[] pair = PROGRESS_TITLES[(score / TITLE_EVERY - 1) % PROGRESS_TITLES.length];
+        player.sendTitlePart(TitlePart.TIMES, Title.Times.times(
+                Duration.ofMillis(120), Duration.ofMillis(820), Duration.ofMillis(260)));
+        player.sendTitlePart(TitlePart.TITLE, Text.c(pair[0]));
+        player.sendTitlePart(TitlePart.SUBTITLE, Text.c(pair[1]));
+    }
+
+    /**
+     * In Competitive mode — when the live score passes another player's leaderboard score,
+     * tell them whom they just overtook.
+     */
+    private void checkOvertake() {
+        if (difficulty != ParkourDifficulty.COMPETITIVE || leaderboardService == null) return;
+        UUID self = player.getUuid();
+        for (ParkourLeaderboardEntry entry : leaderboardService.topEntries(Integer.MAX_VALUE)) {
+            if (entry.score() <= 0 || entry.score() != score - 1) continue;
+            if (entry.playerUuid().equals(self)) continue;
+            player.sendMessage(ParkourService.PARKOUR_TEXT
+                    .append(Component.text("Ты обогнал ", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
+                    .append(Component.text(entry.playerName(), PARKOUR_ORANGE))
+                    .append(Component.text(" — " + entry.score() + " очк.", NamedTextColor.GRAY)));
+        }
     }
 
     private void removeOldTrailingBlocks() {
@@ -254,7 +331,7 @@ public final class ParkourSession {
 
     private void appendNextBlock() {
         Point from = allBlocks.get(allBlocks.size() - 1);
-        Point next = generator.next(from, score);
+        Point next = generator.next(from, allBlocks.subList(headIndex, allBlocks.size()));
 
         instance.setBlock(next.blockX(), next.blockY(), next.blockZ(), generator.randomBlock());
         allBlocks.add(next);
@@ -271,16 +348,22 @@ public final class ParkourSession {
         finished = true;
 
         long elapsedMillis = elapsedMillis();
+        ServerLogger.get().sessionEnd(player.getUsername(), difficulty.displayName(), score,
+                ParkourTimeFormatter.humanReadable(elapsedMillis));
 
         playSound(soundPreset.fail());
 
         player.sendMessage(Component.empty());
-        player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Забег завершен.", NamedTextColor.RED)));
+        player.sendMessage(MSG_FAIL_HEADER);
         player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text(score + " очк. за " + ParkourTimeFormatter.humanReadable(elapsedMillis), LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
 
         if (trainingMode) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(
-                    Component.text("Тренировочный режим — результат не записан.", NamedTextColor.GRAY)));
+            player.sendMessage(MSG_TRAINING_RESULT);
+            return;
+        }
+
+        if (!difficulty.countsForStats()) {
+            player.sendMessage(MSG_NO_STATS_RESULT);
             return;
         }
 
@@ -311,7 +394,7 @@ public final class ParkourSession {
                             .append(Component.text(".", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
             ));
         } else {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Ты повторил свой лучший результат.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
+            player.sendMessage(MSG_REPEATED_BEST);
         }
     }
 
@@ -338,7 +421,7 @@ public final class ParkourSession {
     }
 
     public boolean isScored() {
-        return !trainingMode;
+        return !trainingMode && difficulty.countsForStats();
     }
 
     public boolean isTrainingMode() {
@@ -359,6 +442,10 @@ public final class ParkourSession {
 
     public int getBestScore() {
         return previousBestScore;
+    }
+
+    public String getPlayerName() {
+        return player.getUsername();
     }
 
     public ParkourDifficulty getDifficulty() {
@@ -408,16 +495,14 @@ public final class ParkourSession {
     }
 
     private Component bestRecordMessage() {
-        if (!hasPreviousBest()) {
-            return Component.text("Пока без рекорда. Посмотрим, что получится с этой попытки.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL);
-        }
+        if (!hasPreviousBest()) return MSG_NO_RECORD;
 
-        return Component.text()
+        return ParkourService.PARKOUR_TEXT.append(Component.text()
                 .append(Component.text("Личный рекорд: ", PARKOUR_ORANGE))
                 .append(Component.text(previousBestScore + " очк.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
                 .append(Component.text(" за ", NamedTextColor.DARK_GRAY))
                 .append(Component.text(ParkourTimeFormatter.humanReadable(previousBestDurationMillis), LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
-                .build();
+                .build());
     }
 
     private boolean hasPreviousBest() {
@@ -428,22 +513,16 @@ public final class ParkourSession {
         if (!surpassedPreviousBest && previousBestScore > 0 && score > previousBestScore && !trainingMode) {
             surpassedPreviousBest = true;
             playSound(soundPreset.surpass());
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(
-                    Component.text("Ты уже превзошел свой лучший забег.", PARKOUR_ORANGE)
-            ));
+            player.sendMessage(MSG_PROGRESS_SURPASS);
             return;
         }
 
-        if (score == 5) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Хорошее начало. Уже 5 очков.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
-        } else if (score == 10) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Темп отличный. Уже 10 очков.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
-        } else if (score == 15) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Это уже выше, чем у многих игроков.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
-        } else if (score == 25) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Очень сильно. 25 очков держатся далеко не все.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
-        } else if (score == 50) {
-            player.sendMessage(ParkourService.PARKOUR_TEXT.append(Component.text("Монстр паркура. 50 очков — это мощно.", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)));
+        switch (score) {
+            case 5  -> player.sendMessage(MSG_PROGRESS_5);
+            case 10 -> player.sendMessage(MSG_PROGRESS_10);
+            case 15 -> player.sendMessage(MSG_PROGRESS_15);
+            case 25 -> player.sendMessage(MSG_PROGRESS_25);
+            case 50 -> player.sendMessage(MSG_PROGRESS_50);
         }
     }
 

@@ -15,6 +15,7 @@ import net.minestom.server.world.DimensionType;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardEntry;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardService;
+import ua.vsevolod.lobby.util.ServerLogger;
 import ua.vsevolod.lobby.util.Text;
 
 import java.util.Map;
@@ -26,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class ParkourService {
 
     public final static Component PARKOUR_TEXT = Component.text("[", NamedTextColor.DARK_GRAY)
-            .append(Text.c("&#F1BB58&lП&#F1B958&lа&#F1B658&lр&#F1B458&lк&#F1B158&lу&#F1AF58&lр"))
+            .append(Text.c("<gradient:#AE3AF3:#985DBC><bold>Паркур</bold></gradient>"))
             .append(Component.text("]", NamedTextColor.DARK_GRAY)).decoration(TextDecoration.ITALIC, false).append(Component.space());
 
     private final InstanceManager instanceManager = MinecraftServer.getInstanceManager();
@@ -38,7 +39,7 @@ public final class ParkourService {
     }
 
     public void start(Player player, ParkourDifficulty difficulty, ParkourTheme theme) {
-        startWithDimension(player, difficulty, theme, DimensionType.THE_END, false, ParkourSoundPreset.STANDARD);
+        startWithDimension(player, difficulty, theme, DimensionType.THE_NETHER, false, ParkourSoundPreset.STANDARD);
     }
 
     public void startWithDimension(Player player, ParkourDifficulty difficulty, ParkourTheme theme,
@@ -54,7 +55,7 @@ public final class ParkourService {
         long bestDuration = bestEntry != null ? bestEntry.durationMillis() : Long.MAX_VALUE;
 
         ParkourSession session = new ParkourSession(player, instance, start, bestScore, bestDuration,
-                difficulty, theme, trainingMode, soundPreset);
+                difficulty, theme, trainingMode, soundPreset, leaderboardService);
         session.setCurrentDimension(dimension);
 
         int chunkX = Math.floorDiv(start.blockX(), 16);
@@ -93,6 +94,12 @@ public final class ParkourService {
 
         if (old.isScored() && old.getScore() > 0) {
             leaderboardService.submit(old.toRunResult());
+            ServerLogger.get().leaderboardSaved(
+                    old.toRunResult().playerName(),
+                    old.getDifficulty().displayName(),
+                    old.getScore());
+        } else if (!old.isTrainingMode() && old.getScore() > 0) {
+            ServerLogger.get().leaderboardIgnored(old.getPlayerName(), old.getDifficulty().displayName());
         }
 
         InstanceContainer instance = old.getInstance();
@@ -112,12 +119,12 @@ public final class ParkourService {
                 if (attempts.incrementAndGet() < 90) {
                     return TaskSchedule.tick(20);
                 }
-                System.err.println("[ParkourService] Force-unregistering instance after 90s timeout");
+                ServerLogger.get().warn("ParkourService: force-unregistering instance after 90s timeout");
             }
             try {
                 instanceManager.unregisterInstance(instance);
             } catch (Exception e) {
-                System.err.println("[ParkourService] Failed to unregister instance: " + e.getMessage());
+                ServerLogger.get().error("ParkourService: failed to unregister instance: " + e.getMessage());
             }
             return TaskSchedule.stop();
         });

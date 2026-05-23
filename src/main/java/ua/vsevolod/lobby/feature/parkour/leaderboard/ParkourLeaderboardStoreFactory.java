@@ -1,6 +1,8 @@
 package ua.vsevolod.lobby.feature.parkour.leaderboard;
 
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.config.StorageConfig;
+import ua.vsevolod.lobby.util.ServerLogger;
 
 import java.nio.file.Path;
 
@@ -10,34 +12,30 @@ public final class ParkourLeaderboardStoreFactory {
     }
 
     public static ParkourLeaderboardStore create() {
-        return switch (LobbyConfig.Parkour.LEADERBOARD_STORAGE_MODE) {
-            case FILE -> createFileStore();
+        return switch (StorageConfig.get().leaderboard) {
+            case FILE    -> createFileStore();
             case MONGODB -> createMongoOrFallback();
         };
     }
 
     private static ParkourLeaderboardStore createMongoOrFallback() {
+        StorageConfig cfg = StorageConfig.get();
         try {
             MongoParkourLeaderboardStore store = new MongoParkourLeaderboardStore(
-                    LobbyConfig.Parkour.Mongo.URI,
-                    LobbyConfig.Parkour.Mongo.DATABASE,
-                    LobbyConfig.Parkour.Mongo.COLLECTION
-            );
+                    cfg.mongoUri, cfg.mongoDatabase, cfg.mongoLeaderboardCollection);
             registerShutdown(store);
-            System.out.println("[PARKOUR] Таблица лидеров подключена к MongoDB: "
-                    + LobbyConfig.Parkour.Mongo.DATABASE + "/" + LobbyConfig.Parkour.Mongo.COLLECTION);
+            ServerLogger.get().info("Leaderboard storage: MongoDB ("
+                    + cfg.mongoDatabase + "/" + cfg.mongoLeaderboardCollection + ")");
             return store;
-        } catch (RuntimeException exception) {
-            if (!LobbyConfig.Parkour.Mongo.FALLBACK_TO_FILE) {
-                throw exception;
-            }
-
-            System.out.println("[PARKOUR] MongoDB недоступна, используем файловое хранилище: " + exception.getMessage());
+        } catch (RuntimeException e) {
+            if (!cfg.mongoFallbackToFile) throw e;
+            ServerLogger.get().warn("Leaderboard MongoDB unavailable, using file storage");
             return createFileStore();
         }
     }
 
     private static ParkourLeaderboardStore createFileStore() {
+        ServerLogger.get().detail("Leaderboard storage: file (" + LobbyConfig.Parkour.LEADERBOARD_FILE_PATH + ")");
         return new ParkourFileLeaderboardStore(Path.of(LobbyConfig.Parkour.LEADERBOARD_FILE_PATH));
     }
 

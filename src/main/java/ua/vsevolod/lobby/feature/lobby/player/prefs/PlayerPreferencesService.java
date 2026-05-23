@@ -1,13 +1,11 @@
 package ua.vsevolod.lobby.feature.lobby.player.prefs;
 
-import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Pos;
-import net.minestom.server.timer.Task;
 import org.jetbrains.annotations.Nullable;
+import ua.vsevolod.lobby.util.WriteBehindCache;
 
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Caches and persists per-player preferences (music, visibility, last position).
@@ -15,27 +13,34 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h3>Lifecycle</h3>
  * <ol>
  *   <li>{@link #preload(UUID)} — called from {@code AsyncPlayerPreLoginEvent} (blocking OK
- *       there), loads from MongoDB and caches.</li>
+ *       there), loads from MongoDB and seeds the cache.</li>
  *   <li>{@link #get(UUID)} — cheap cache lookup used during {@code PlayerSpawnEvent}.</li>
- *   <li>{@code save*(…)} — update cache and schedule a debounced persist on a virtual thread.</li>
- *   <li>{@link #evict(UUID)} — clean up cache on disconnect (also cancels pending save).</li>
+ *   <li>{@code save*(…)} — update cache; the actual write is debounced 60 s on a virtual thread.</li>
+ *   <li>{@link #evict(UUID)} — on disconnect: synchronously flush pending change (so we never
+ *       lose the last toggle) and clear the cache entry.</li>
+ *   <li>{@link #flushAll()} — call from the shutdown hook so changes survive server stop.</li>
  * </ol>
  *
  * <h3>Debounce</h3>
- * Rapid successive toggles (e.g. fast GUI clicks) are coalesced: the actual MongoDB write is
- * delayed 400 ms after the last change.  Only one pending write task exists per player at any
- * time, so 10 quick clicks → 1 database write instead of 10.
+ * Each {@code save*()} pushes the deadline 60 s into the future. A player who toggles
+ * continuously will never trigger a write while toggling — only after they stop, or when they
+ * disconnect (which forces a flush). Idle players cost zero I/O. Anti-spam by construction.
  */
 public final class PlayerPreferencesService {
 
-    private static final long SAVE_DEBOUNCE_MS = 400;
+    /** Debounce window: each toggle resets the timer. Long enough that bot-style spammers
+     *  can't generate I/O — short enough that a normal session's final state is captured by
+     *  the disconnect flush. */
+    private static final Duration SAVE_DEBOUNCE = Duration.ofSeconds(60);
 
     @Nullable private final PlayerDataStore store;
-    private final ConcurrentHashMap<UUID, PlayerPreferences> cache       = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, Task>              pendingSaves = new ConcurrentHashMap<>();
+    private final WriteBehindCache<UUID, PlayerPreferences> cache;
 
     public PlayerPreferencesService(@Nullable PlayerDataStore store) {
         this.store = store;
+        this.cache = new WriteBehindCache<>("PlayerPrefs", SAVE_DEBOUNCE, (uuid, prefs) -> {
+            if (store != null) store.save(uuid, prefs);
+        });
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -44,7 +49,7 @@ public final class PlayerPreferencesService {
     public void preload(UUID uuid) {
         if (store == null) return;
         try {
-            cache.put(uuid, store.load(uuid));
+            cache.loadInto(uuid, store.load(uuid));
         } catch (Exception e) {
             System.err.println("[PlayerPrefs] Failed to load for " + uuid + ": " + e.getMessage());
         }
@@ -55,62 +60,57 @@ public final class PlayerPreferencesService {
         return cache.getOrDefault(uuid, PlayerPreferences.defaults());
     }
 
-    /** Remove from cache on disconnect; also cancels any pending debounced save. */
+    /** On disconnect: flush pending changes synchronously (on virtual thread) and clear cache. */
     public void evict(UUID uuid) {
-        cache.remove(uuid);
-        Task pending = pendingSaves.remove(uuid);
-        if (pending != null) pending.cancel();
+        cache.evict(uuid);
+    }
+
+    /** Shutdown hook: synchronously flush every player's pending changes. */
+    public void flushAll() {
+        cache.flushAll();
     }
 
     // ── Mutations ─────────────────────────────────────────────────────────────
 
     public void saveMusicEnabled(UUID uuid, boolean musicEnabled) {
         PlayerPreferences cur = get(uuid);
-        update(uuid, new PlayerPreferences(musicEnabled, cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.lastPosition()));
+        cache.put(uuid, new PlayerPreferences(musicEnabled, cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
     }
 
     public void savePlayersHidden(UUID uuid, boolean playersHidden) {
         PlayerPreferences cur = get(uuid);
-        update(uuid, new PlayerPreferences(cur.musicEnabled(), playersHidden, cur.sidebarHidden(), cur.positionSaveEnabled(), cur.lastPosition()));
+        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), playersHidden, cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
     }
 
     public void saveSidebarHidden(UUID uuid, boolean sidebarHidden) {
         PlayerPreferences cur = get(uuid);
-        update(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), sidebarHidden, cur.positionSaveEnabled(), cur.lastPosition()));
+        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), sidebarHidden, cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
     }
 
     public void savePositionSaveEnabled(UUID uuid, boolean positionSaveEnabled) {
         PlayerPreferences cur = get(uuid);
-        update(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), positionSaveEnabled, cur.lastPosition()));
+        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), positionSaveEnabled, cur.protocolWarningEnabled(), cur.firstSeenEpoch(), cur.lastPosition()));
+    }
+
+    public void saveProtocolWarningEnabled(UUID uuid, boolean protocolWarningEnabled) {
+        PlayerPreferences cur = get(uuid);
+        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), protocolWarningEnabled, cur.firstSeenEpoch(), cur.lastPosition()));
     }
 
     public void savePosition(UUID uuid, Pos position) {
         PlayerPreferences cur = get(uuid);
-        update(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), position));
+        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), cur.firstSeenEpoch(), position));
     }
 
-    // ── Internal ──────────────────────────────────────────────────────────────
-
-    private void update(UUID uuid, PlayerPreferences prefs) {
-        cache.put(uuid, prefs);
-        if (store == null) return;
-
-        // Cancel any existing pending write for this player
-        Task existing = pendingSaves.remove(uuid);
-        if (existing != null) existing.cancel();
-
-        // Schedule a single debounced write 400 ms after the last change
-        Task task = MinecraftServer.getSchedulerManager()
-                .buildTask(() -> {
-                    pendingSaves.remove(uuid);
-                    try {
-                        store.save(uuid, prefs);
-                    } catch (Exception e) {
-                        System.err.println("[PlayerPrefs] Failed to save for " + uuid + ": " + e.getMessage());
-                    }
-                })
-                .delay(Duration.ofMillis(SAVE_DEBOUNCE_MS))
-                .schedule();
-        pendingSaves.put(uuid, task);
+    /**
+     * Stamps {@code firstSeenEpoch} only if it is currently 0 (never seen). Returns the value
+     * actually stored, so callers can decide whether this join is a real first-time visit.
+     */
+    public long markFirstSeenIfAbsent(UUID uuid) {
+        PlayerPreferences cur = get(uuid);
+        if (cur.firstSeenEpoch() != 0L) return cur.firstSeenEpoch();
+        long now = System.currentTimeMillis();
+        cache.put(uuid, new PlayerPreferences(cur.musicEnabled(), cur.playersHidden(), cur.sidebarHidden(), cur.positionSaveEnabled(), cur.protocolWarningEnabled(), now, cur.lastPosition()));
+        return now;
     }
 }

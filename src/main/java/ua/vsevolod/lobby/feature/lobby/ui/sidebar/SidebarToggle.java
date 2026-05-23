@@ -14,9 +14,9 @@ import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.tag.Tag;
-import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.ToggleItemDefinition;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
-import ua.vsevolod.lobby.util.Text;
 
 import java.util.List;
 import java.util.Set;
@@ -73,14 +73,15 @@ public final class SidebarToggle {
 
     public void toggle(Player player) {
         boolean nowHidden = !hiddenPlayers.contains(player.getUuid());
+        ToggleItemDefinition def = JoinItemsConfig.get().toggleItems.sidebar();
         if (nowHidden) {
             hiddenPlayers.add(player.getUuid());
             sidebar.hide(player);
-            player.sendMessage(buildMessage(false));
+            player.sendMessage(def.message(false));
         } else {
             hiddenPlayers.remove(player.getUuid());
             sidebar.show(player);
-            player.sendMessage(buildMessage(true));
+            player.sendMessage(def.message(true));
         }
         if (preferencesService != null) {
             preferencesService.saveSidebarHidden(player.getUuid(), nowHidden);
@@ -91,69 +92,14 @@ public final class SidebarToggle {
         player.getInventory().setItemStack(ITEM_SLOT, getItem(hiddenPlayers.contains(player.getUuid())));
     }
 
-    // ── Static item builders ─────────────────────────────────────────────────
-
-    private static final Component SIDEBAR_TEXT =
-            Text.c("&#F1BB58&lС&#F1B958&lк&#F1B658&lо&#F1B458&lр&#F1B158&lб&#F1AF58&lо&#F1AD58&lр&#F1AB58&lд");
-
-    private static final Component NAME_ON = SIDEBAR_TEXT.append(Component.space())
-            .append(Component.text("[", NamedTextColor.DARK_GRAY))
-            .append(Component.text("Виден", TextColor.color(0x8EB126)))
-            .append(Component.text("]", NamedTextColor.DARK_GRAY))
-            .decoration(TextDecoration.ITALIC, false);
-
-    private static final Component NAME_OFF = SIDEBAR_TEXT.append(Component.space())
-            .append(Component.text("[", NamedTextColor.DARK_GRAY))
-            .append(Component.text("Скрыт", TextColor.color(0xFA3B3B)))
-            .append(Component.text("]", NamedTextColor.DARK_GRAY))
-            .decoration(TextDecoration.ITALIC, false);
-
-    private static final ItemStack ITEM_SHOWN = buildItem(false);
-    private static final ItemStack ITEM_HIDDEN = buildItem(true);
-
+    /** Builds the sidebar toggle item live from {@code config/toggle-items.yml}. */
     public static ItemStack getItem(boolean hidden) {
-        return hidden ? ITEM_HIDDEN : ITEM_SHOWN;
-    }
-
-    private static ItemStack buildItem(boolean hidden) {
-        List<Component> lore = Stream.<Component>of(
-                Component.space(),
-                Component.text(" «Информация»", TextColor.color(0x65D1FC)),
-                Component.empty()
-                        .append(Component.text(" - ", GRAY))
-                        .append(Component.text("Статус: ", TextColor.color(0xFFF2E0)))
-                        .append(hidden
-                                ? Component.text("Скрыт", NamedTextColor.RED)
-                                : Component.text("Отображается", NamedTextColor.GREEN)),
-                Component.empty()
-                        .append(Component.text(" - ", GRAY))
-                        .append(Component.text("Включает/выключает", TextColor.color(0xFFF2E0))),
-                Component.empty()
-                        .append(Component.text(" - ", GRAY))
-                        .append(Component.text("таблицу очков.", TextColor.color(0xFFF2E0))),
-                Component.space(),
-                Component.text("➥ Нажмите, чтобы переключиться", NamedTextColor.YELLOW)
-        ).map(c -> c.decoration(TextDecoration.ITALIC, false)).toList();
-
-        return ItemStack.builder(hidden ? Material.GRAY_DYE : Material.MAGENTA_DYE)
-                .set(DataComponents.CUSTOM_NAME, hidden ? NAME_OFF : NAME_ON)
-                .set(DataComponents.LORE, lore)
+        ToggleItemDefinition def = JoinItemsConfig.get().toggleItems.sidebar();
+        boolean enabled = !hidden;
+        return ItemStack.builder(def.material(enabled))
+                .set(DataComponents.CUSTOM_NAME, def.displayName(enabled))
+                .set(DataComponents.LORE, def.lore(enabled))
                 .set(TOGGLE_TAG, hidden ? STATE_HIDDEN : STATE_SHOWN)
                 .build();
-    }
-
-    private Component buildMessage(boolean nowShown) {
-        Component action = nowShown
-                ? Component.text("включили", TextColor.color(0x81E366))
-                : Component.text("выключили", TextColor.color(0xE36666));
-        return Component.text("[", NamedTextColor.DARK_GRAY)
-                .append(SIDEBAR_TEXT)
-                .append(Component.text("]", NamedTextColor.DARK_GRAY))
-                .append(Component.space())
-                .append(Component.text("Вы", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
-                .append(Component.space())
-                .append(action)
-                .append(Component.space())
-                .append(Component.text("отображение скорборда", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
     }
 }

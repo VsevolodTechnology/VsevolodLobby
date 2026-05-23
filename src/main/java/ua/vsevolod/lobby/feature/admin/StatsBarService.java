@@ -26,7 +26,7 @@ public final class StatsBarService {
     private final Map<UUID, BossBar> tpsBars = new ConcurrentHashMap<>();
 
     private final BossBar ramBar = BossBar.bossBar(
-            Text.raw("&eRAM: ..."),
+            Text.raw("<#C58AF0>RAM: ..."),
             0.0f,
             BossBar.Color.BLUE,
             BossBar.Overlay.PROGRESS
@@ -35,7 +35,9 @@ public final class StatsBarService {
 
     /** Skip-if-unchanged caches. */
     private final Map<UUID, String> lastTpsLabel = new ConcurrentHashMap<>();
-    private String lastRamLabel = "";
+    /** Volatile because tick() runs on the scheduler thread and the field is also read from
+     *  toggle*() on the tick. Single writer in practice, but make the visibility explicit. */
+    private volatile String lastRamLabel = "";
 
     private boolean registered = false;
 
@@ -72,7 +74,7 @@ public final class StatsBarService {
             return false;
         }
         BossBar bar = BossBar.bossBar(
-                Text.raw("&eTPS: ... &eMSPT: ... &ePing: ..."),
+                Text.raw("<#C58AF0>TPS: ... <#C58AF0>MSPT: ... <#C58AF0>Ping: ..."),
                 1.0f,
                 BossBar.Color.GREEN,
                 BossBar.Overlay.PROGRESS
@@ -114,18 +116,18 @@ public final class StatsBarService {
                             tps >= 15.0 ? BossBar.Color.YELLOW :
                                     BossBar.Color.RED;
             String tpsColorTag =
-                    tps >= 18.5 ? "&a" :
-                            tps >= 15.0 ? "&e" :
-                                    "&c";
+                    tps >= 18.5 ? "<green>" :
+                            tps >= 15.0 ? "<#C58AF0>" :
+                                    "<red>";
 
             for (Map.Entry<UUID, BossBar> entry : tpsBars.entrySet()) {
                 Player p = connectionManager.getOnlinePlayerByUuid(entry.getKey());
                 if (p == null) continue;
                 int ping = p.getLatency();
-                String pingTag = ping < 80 ? "&a" : ping < 200 ? "&e" : "&c";
+                String pingTag = ping < 80 ? "<green>" : ping < 200 ? "<#C58AF0>" : "<red>";
                 String label = String.format(
                         Locale.US,
-                        "&#FFE259ᴛᴘs: %s%.1f &7| &#FFE259ᴍsᴘᴛ: %s%.2f &7| &#FFE259ᴘɪɴɢ: %s%dᴍs",
+                        "<#C58AF0>ᴛᴘs: %s%.1f <gray>| <#C58AF0>ᴍsᴘᴛ: %s%.2f <gray>| <#C58AF0>ᴘɪɴɢ: %s%dᴍs",
                         tpsColorTag, tps,
                         tpsColorTag, mspt,
                         pingTag, ping);
@@ -151,13 +153,13 @@ public final class StatsBarService {
                             ramRatio < 0.9 ? BossBar.Color.YELLOW :
                                     BossBar.Color.RED;
             String ramColorTag =
-                    ramRatio < 0.7 ? "&a" :
-                            ramRatio < 0.9 ? "&e" :
-                                    "&c";
+                    ramRatio < 0.7 ? "<green>" :
+                            ramRatio < 0.9 ? "<#C58AF0>" :
+                                    "<red>";
 
             String ramLabel = String.format(
                     Locale.US,
-                    "&#FFE259ʀᴀᴍ: %s%d ᴍʙ &7/ &f%d ᴍʙ &7(&f%.1f%%&7)",
+                    "<#C58AF0>ʀᴀᴍ: %s%d ᴍʙ <gray>/ <#FFF2E0>%d ᴍʙ <gray>(<#FFF2E0>%.1f%%<gray>)",
                     ramColorTag, usedMB, maxMB, ramRatio * 100.0);
             if (!ramLabel.equals(lastRamLabel)) {
                 lastRamLabel = ramLabel;

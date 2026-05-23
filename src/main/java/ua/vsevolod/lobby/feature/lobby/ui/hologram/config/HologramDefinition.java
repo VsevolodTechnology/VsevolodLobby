@@ -10,8 +10,8 @@ import java.util.List;
  *   parkour:
  *     position: { x: 6.5, y: 81.2, z: -4.5 }
  *     lines:
- *       - "&#F1BB58&lПАРКУР"
- *       - "&#FFF2E0Проверь реакцию и точность"
+ *       - "<#AE3AF3><bold>ПАРКУР"
+ *       - "<#FFF2E0>Проверь реакцию и точность"
  *     billboard: fixed          # center | vertical | horizontal | fixed
  *     scale: 0.8                # uniform, or {x: 1.0, y: 1.0, z: 1.0}
  *     shadow: true

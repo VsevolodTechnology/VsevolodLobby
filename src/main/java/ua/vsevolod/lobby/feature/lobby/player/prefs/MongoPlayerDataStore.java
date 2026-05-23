@@ -52,6 +52,8 @@ public final class MongoPlayerDataStore implements PlayerDataStore {
         boolean hidden = doc.getBoolean("playersHidden", false);
         boolean sidebarHidden = doc.getBoolean("sidebarHidden", false);
         boolean positionSaveEnabled = doc.getBoolean("positionSaveEnabled", true);
+        boolean protocolWarningEnabled = doc.getBoolean("protocolWarningEnabled", true);
+        long firstSeenEpoch = doc.get("firstSeenEpoch") instanceof Number n ? n.longValue() : 0L;
 
         Pos pos = null;
         if (Boolean.TRUE.equals(doc.getBoolean("hasPosition", false))) {
@@ -65,7 +67,7 @@ public final class MongoPlayerDataStore implements PlayerDataStore {
             } catch (Exception ignored) {}
         }
 
-        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, pos);
+        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, protocolWarningEnabled, firstSeenEpoch, pos);
     }
 
     @Override
@@ -74,7 +76,9 @@ public final class MongoPlayerDataStore implements PlayerDataStore {
                 .append("musicEnabled", prefs.musicEnabled())
                 .append("playersHidden", prefs.playersHidden())
                 .append("sidebarHidden", prefs.sidebarHidden())
-                .append("positionSaveEnabled", prefs.positionSaveEnabled());
+                .append("positionSaveEnabled", prefs.positionSaveEnabled())
+                .append("protocolWarningEnabled", prefs.protocolWarningEnabled())
+                .append("firstSeenEpoch", prefs.firstSeenEpoch());
 
         Pos pos = prefs.lastPosition();
         if (pos != null) {

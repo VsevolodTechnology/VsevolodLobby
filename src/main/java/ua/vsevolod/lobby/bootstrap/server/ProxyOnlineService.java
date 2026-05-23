@@ -107,6 +107,10 @@ public final class ProxyOnlineService {
 
         long age = System.currentTimeMillis() - snapshot.updatedAt();
         if (age > COUNT_TTL_MS) {
+            // Atomic remove — only drops this exact snapshot; another thread may have just put
+            // a fresh value and we don't want to clobber it. Audit MED-10: previously stale
+            // entries lingered forever and grew the map on every reconfigure.
+            counts.remove(key, snapshot);
             return new ModeStatus(key, ModeStatus.State.LOADING, 0);
         }
 
@@ -172,17 +176,17 @@ public final class ProxyOnlineService {
 
         public String statusText() {
             return switch (state) {
-                case ONLINE -> "§aРаботает";
-                case OFFLINE -> "§cВыключен";
-                case LOADING -> "§6Загрузка...";
+                case ONLINE -> "<green>Работает";
+                case OFFLINE -> "<red>Выключен";
+                case LOADING -> "<#AE3AF3>Загрузка...";
             };
         }
 
         public String onlineText() {
             return switch (state) {
-                case ONLINE -> "§e" + online;
-                case OFFLINE -> "§7—";
-                case LOADING -> "§7...";
+                case ONLINE -> "<#C58AF0>" + online;
+                case OFFLINE -> "<gray>—";
+                case LOADING -> "<gray>...";
             };
         }
     }

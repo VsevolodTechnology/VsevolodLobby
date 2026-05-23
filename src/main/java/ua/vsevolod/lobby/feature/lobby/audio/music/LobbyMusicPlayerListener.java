@@ -1,16 +1,13 @@
 package ua.vsevolod.lobby.feature.lobby.audio.music;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextColor;
 import net.minestom.server.entity.PlayerHand;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.item.ItemDropEvent;
 import net.minestom.server.event.player.PlayerUseItemEvent;
 import net.minestom.server.item.ItemStack;
-import net.minestom.server.item.Material;
-import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.bootstrap.LobbyEventRegistration;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfig;
+
 public final class LobbyMusicPlayerListener implements LobbyEventRegistration {
 
     private final LobbyMusicManager music;
@@ -27,11 +24,8 @@ public final class LobbyMusicPlayerListener implements LobbyEventRegistration {
             if (event.getHand() != PlayerHand.MAIN) {
                 return;
             }
-
+            // Identify the toggle by its tag, not material — the material is configurable.
             ItemStack item = event.getItemStack();
-            if (item.material() != Material.MUSIC_DISC_CAT && item.material() != Material.MUSIC_DISC_BLOCKS) {
-                return;
-            }
             if (!item.hasTag(LobbyMusicManager.MUSIC_TAG)) {
                 return;
             }
@@ -40,35 +34,18 @@ public final class LobbyMusicPlayerListener implements LobbyEventRegistration {
             boolean enabled = music.isDisabled(player);
             music.setEnabled(player, enabled);
 
-            player.sendMessage(enabled ? enabledMessage() : disabledMessage());
+            player.sendMessage(JoinItemsConfig.get().toggleItems.music().message(enabled));
 
             int slot = player.getHeldSlot();
             player.getInventory().setItemStack(slot, LobbyMusicManager.getMusicToggle(enabled));
         });
 
-        // Q key: open music selector menu
+        // Q key (item drop): open the music selector menu
         handler.addListener(ItemDropEvent.class, event -> {
             ItemStack item = event.getItemStack();
-            if (item.material() != Material.MUSIC_DISC_CAT && item.material() != Material.MUSIC_DISC_BLOCKS) return;
             if (!item.hasTag(LobbyMusicManager.MUSIC_TAG)) return;
             event.setCancelled(true);
             selectorMenu.open(event.getPlayer());
         });
-    }
-
-    private Component enabledMessage() {
-        return Component.text("[", NamedTextColor.DARK_GRAY).append(LobbyMusicManager.MUSIC_TEXT).append(Component.text("]", NamedTextColor.DARK_GRAY))
-                .append(Component.space())
-                .append(Component.text("Вы", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)).append(Component.space())
-                .append(Component.text("включили", TextColor.color(0x81E366))).append(Component.space())
-                .append(Component.text("проигрывание музыки", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
-    }
-
-    private Component disabledMessage() {
-        return Component.text("[", NamedTextColor.DARK_GRAY).append(LobbyMusicManager.MUSIC_TEXT).append(Component.text("]", NamedTextColor.DARK_GRAY))
-                .append(Component.space())
-                .append(Component.text("Вы", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)).append(Component.space())
-                .append(Component.text("выключили", TextColor.color(0xE36666))).append(Component.space())
-                .append(Component.text("проигрывание музыки", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL));
     }
 }

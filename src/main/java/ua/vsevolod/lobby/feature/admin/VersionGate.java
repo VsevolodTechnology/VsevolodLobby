@@ -1,20 +1,34 @@
 package ua.vsevolod.lobby.feature.admin;
 
+import ua.vsevolod.lobby.util.WriteBehindCache;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.List;
 
+/**
+ * Tracks the protocol-version filter (enabled flag + min/max range).
+ *
+ * <p>State is held in {@code volatile} fields for lock-free reads; writes go through a
+ * {@link WriteBehindCache} with a 3 s debounce. Multiple admin edits ({@code /version min 770;
+ * /version max 776; /version on}) coalesce into a single file write.</p>
+ */
 public final class VersionGate {
 
     private static final Path FILE = Paths.get("storage", "version_gate.txt");
+    private static final String KEY = "state";
 
     private static volatile boolean enabled = false;
     private static volatile int minProtocol = 0;
     private static volatile int maxProtocol = 999_999;
+
+    private static final WriteBehindCache<String, State> WRITER =
+            new WriteBehindCache<>("VersionGate", Duration.ofSeconds(3), VersionGate::writeToDisk);
 
     private VersionGate() {}
 
@@ -30,19 +44,19 @@ public final class VersionGate {
         return maxProtocol;
     }
 
-    public static synchronized void setEnabled(boolean value) {
+    public static void setEnabled(boolean value) {
         enabled = value;
-        save();
+        scheduleWrite();
     }
 
-    public static synchronized void setMin(int value) {
+    public static void setMin(int value) {
         minProtocol = value;
-        save();
+        scheduleWrite();
     }
 
-    public static synchronized void setMax(int value) {
+    public static void setMax(int value) {
         maxProtocol = value;
-        save();
+        scheduleWrite();
     }
 
     public static boolean allows(int protocol) {
@@ -50,7 +64,9 @@ public final class VersionGate {
         return protocol >= minProtocol && protocol <= maxProtocol;
     }
 
-    public static synchronized void load() {
+    /** One-time load at startup. Blocking is fine here (called from main thread before
+     *  Minestom.init), and we want the file read to complete before any client can connect. */
+    public static void load() {
         try {
             if (!Files.exists(FILE)) return;
             List<String> lines = Files.readAllLines(FILE, StandardCharsets.UTF_8);
@@ -76,13 +92,22 @@ public final class VersionGate {
         }
     }
 
-    private static void save() {
+    /** Shutdown hook: synchronously flush pending writes. */
+    public static void flushAll() {
+        WRITER.flushAll();
+    }
+
+    private static void scheduleWrite() {
+        WRITER.put(KEY, new State(enabled, minProtocol, maxProtocol));
+    }
+
+    private static void writeToDisk(String ignored, State state) {
         try {
             Files.createDirectories(FILE.getParent());
             String content =
-                    "enabled=" + enabled + "\n" +
-                            "min=" + minProtocol + "\n" +
-                            "max=" + maxProtocol + "\n";
+                    "enabled=" + state.enabled + "\n" +
+                            "min=" + state.min + "\n" +
+                            "max=" + state.max + "\n";
             // Atomic tmp+move — a crash during the prior writeString could leave the file
             // partially written. With this gate, on next load we'd read back broken state and
             // potentially kick legitimate clients. Same pattern as ConfigManager / OpsStore.
@@ -93,4 +118,6 @@ public final class VersionGate {
             System.err.println("[VersionGate] Failed to save: " + e.getMessage());
         }
     }
+
+    private record State(boolean enabled, int min, int max) {}
 }

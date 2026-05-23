@@ -48,3 +48,7 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+# Reference material and debug artefacts (not part of the project source)
+ajParkour-*.jar
+net/
+qrCode.jpg

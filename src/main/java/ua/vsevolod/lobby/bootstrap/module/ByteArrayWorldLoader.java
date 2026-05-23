@@ -6,6 +6,8 @@ import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.anvil.AnvilLoader;
 import org.jetbrains.annotations.Nullable;
 
+import ua.vsevolod.lobby.util.ServerLogger;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -27,17 +29,16 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
     private final byte[] worldBytes;
     private final String tempPrefix;
 
-    private volatile Path tempDir;
-    private volatile AnvilLoader delegate;
     /**
-     * Set of {@code (rx,rz)} keys for region files that physically exist in the saved world.
-     * Any chunk whose region is NOT in here is rejected immediately by {@link #loadChunk}
-     * with {@code null} — Minestom treats null as "no chunk, fall through to generator".
-     * Since the lobby has no generator set, the chunk simply stays unloaded and the client
-     * sees void. This avoids AnvilLoader probing the filesystem for non-existent .mca files
-     * (the Spark profile caught 0.30 s of FJ-pool CPU per chunk-load cycle on this path).
+     * All three loader-state fields rolled into one immutable record published via a single
+     * volatile write. The previous design had three separate volatile fields assigned in
+     * sequence inside {@code synchronized} — a concurrent reader through the double-checked
+     * fast path could observe {@code delegate != null} but {@code presentRegions == null}
+     * (NPE in {@link #loadChunk}). One atomic publish eliminates that window. Audit MED-09.
      */
-    private volatile Set<Long> presentRegions;
+    private record LoaderState(Path tempDir, AnvilLoader delegate, Set<Long> presentRegions) {}
+
+    private volatile LoaderState state;
 
     public ByteArrayWorldLoader(byte[] worldBytes) {
         this(worldBytes, "minestom-world-");
@@ -48,31 +49,30 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
         this.tempPrefix = tempPrefix;
     }
 
-    private AnvilLoader getOrCreateDelegate() {
-        AnvilLoader loader = delegate;
-        if (loader != null) {
-            return loader;
-        }
+    private LoaderState getOrCreateState() {
+        LoaderState s = state;
+        if (s != null) return s;
 
         synchronized (this) {
-            if (delegate != null) {
-                return delegate;
-            }
+            if (state != null) return state;
 
             try {
                 Path dir = Files.createTempDirectory(tempPrefix);
                 unzip(worldBytes, dir);
 
-                this.tempDir = dir;
-                this.delegate = new AnvilLoader(dir);
-                this.presentRegions = scanRegions(dir);
-                System.out.println("[ByteArrayWorldLoader] Lobby loaded — "
-                        + presentRegions.size() + " region file(s) (chunks outside are skipped).");
-                return this.delegate;
+                LoaderState ns = new LoaderState(dir, new AnvilLoader(dir), scanRegions(dir));
+                state = ns;   // single atomic publish — readers see all three together
+                ServerLogger.get().info("Lobby world loaded — "
+                        + ns.presentRegions.size() + " region file(s)");
+                return ns;
             } catch (IOException e) {
                 throw new UncheckedIOException("Failed to create temp world from bytes", e);
             }
         }
+    }
+
+    private AnvilLoader getOrCreateDelegate() {
+        return getOrCreateState().delegate;
     }
 
     /**
@@ -91,7 +91,7 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
                 }
             });
         } catch (IOException e) {
-            System.err.println("[ByteArrayWorldLoader] Region scan failed: " + e.getMessage());
+            ServerLogger.get().error("Region scan failed: " + e.getMessage());
         }
         return out;
     }
@@ -107,20 +107,17 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
 
     @Override
     public @Nullable Chunk loadChunk(Instance instance, int chunkX, int chunkZ) {
-        AnvilLoader loader = getOrCreateDelegate();
+        LoaderState s = getOrCreateState();
         // Bail before touching AnvilLoader if this chunk is in a region that doesn't exist
         // in the saved world. AnvilLoader would otherwise try to open the missing .mca file
         // (Spark profile flagged this as 0.30 s of FJ-pool CPU per parkour cycle); the void
         // outside the lobby map should simply stay unloaded for the client.
-        Set<Long> regions = presentRegions;
-        if (regions != null) {
-            int rx = chunkX >> 5;
-            int rz = chunkZ >> 5;
-            if (!regions.contains(regionKey(rx, rz))) {
-                return null;
-            }
+        int rx = chunkX >> 5;
+        int rz = chunkZ >> 5;
+        if (!s.presentRegions.contains(regionKey(rx, rz))) {
+            return null;
         }
-        return loader.loadChunk(instance, chunkX, chunkZ);
+        return s.delegate.loadChunk(instance, chunkX, chunkZ);
     }
 
     @Override
@@ -135,9 +132,9 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
 
     @Override
     public void unloadChunk(Chunk chunk) {
-        AnvilLoader loader = delegate;
-        if (loader != null) {
-            loader.unloadChunk(chunk);
+        LoaderState s = state;
+        if (s != null) {
+            s.delegate.unloadChunk(chunk);
         }
     }
 
@@ -153,18 +150,17 @@ public final class ByteArrayWorldLoader implements ChunkLoader, AutoCloseable {
 
     @Override
     public void close() {
-        Path dir = tempDir;
-        if (dir == null) {
+        LoaderState s = state;
+        if (s == null) {
             return;
         }
 
         try {
-            deleteRecursively(dir);
+            deleteRecursively(s.tempDir);
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to delete temp world dir: " + dir, e);
+            throw new UncheckedIOException("Failed to delete temp world dir: " + s.tempDir, e);
         } finally {
-            tempDir = null;
-            delegate = null;
+            state = null;
         }
     }
 

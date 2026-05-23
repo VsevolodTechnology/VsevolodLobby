@@ -49,11 +49,11 @@ public final class LobbySidebar {
     private boolean lastEnabledApplied;
 
     public LobbySidebar() {
-        this.sidebar = new PerViewerSidebar(Text.c("&#FF9700&lOVERDYN"));
-        this.lastEnabledApplied = SidebarConfigSection.INSTANCE.current().enabled();
+        this.sidebar = new PerViewerSidebar(Text.c("<gradient:#AE3AF3:#985DBC><bold>ᴏʀᴊᴜꜱ"));
+        this.lastEnabledApplied = SidebarConfig.get().enabled;
         buildLayout();
         preRenderFrames();
-        SidebarConfigSection.INSTANCE.addChangeListener(this::rescheduleTasks);
+        SidebarConfig.addListener(this::rescheduleTasks);
         startAnimationTask();
         startRefreshTask();
     }
@@ -70,9 +70,9 @@ public final class LobbySidebar {
     }
 
     private void preRenderFrames() {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
-        List<String> frames = cfg.titleFrames();
-        String template = cfg.titleFrameTemplate();
+        SidebarConfig cfg = SidebarConfig.get();
+        List<String> frames = cfg.titleFrames;
+        String template = cfg.titleFrameTemplate;
         renderedFrames = new String[frames.size()];
         for (int i = 0; i < frames.size(); i++) {
             renderedFrames[i] = template.replace("{frame}", frames.get(i));
@@ -80,26 +80,26 @@ public final class LobbySidebar {
     }
 
     private void buildLayout() {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        SidebarConfig cfg = SidebarConfig.get();
         int score = 15;
 
         registerLine(ID_BLANK_TOP, "", score--);
-        registerLine(ID_WELCOME, cfg.welcomeText(), score--);
+        registerLine(ID_WELCOME, cfg.welcomeText, score--);
         registerLine(ID_BLANK_A, "", score--);
 
-        for (int i = 0; i < cfg.descriptionLines().size(); i++) {
-            registerLine(ID_DESC + i, cfg.descriptionLines().get(i), score--);
+        for (int i = 0; i < cfg.descriptionLines.size(); i++) {
+            registerLine(ID_DESC + i, cfg.descriptionLines.get(i), score--);
         }
 
         registerLine(ID_BLANK_B, "", score--);
-        registerLine(ID_MODES_HEADER, cfg.modesHeader(), score--);
+        registerLine(ID_MODES_HEADER, cfg.modesHeader, score--);
 
-        for (ServerInfo server : ServerRegistry.LOBBY_SERVERS) {
+        for (ServerInfo server : ServerRegistry.servers()) {
             registerLine(serverLineId(server), formatServerLine(server, cfg), score--);
         }
 
         registerLine(ID_BLANK_C, "", score--);
-        registerLine(ID_PING, cfg.pingTemplate().replace("{ping}", "0"), score--);
+        registerLine(ID_PING, cfg.pingTemplate.replace("{ping}", "0"), score--);
     }
 
     private void registerLine(String id, String text, int score) {
@@ -108,23 +108,23 @@ public final class LobbySidebar {
     }
 
     private void startAnimationTask() {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        SidebarConfig cfg = SidebarConfig.get();
         animationTask = MinecraftServer.getSchedulerManager()
                 .buildTask(this::tickAnimation)
-                .repeat(Duration.ofMillis(cfg.titleAnimationIntervalMs()))
+                .repeat(Duration.ofMillis(cfg.titleAnimationIntervalMs))
                 .schedule();
     }
 
     private void startRefreshTask() {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        SidebarConfig cfg = SidebarConfig.get();
         refreshTask = MinecraftServer.getSchedulerManager()
                 .buildTask(this::refreshAll)
-                .repeat(Duration.ofMillis(cfg.refreshIntervalMs()))
+                .repeat(Duration.ofMillis(cfg.refreshIntervalMs))
                 .schedule();
     }
 
     private void tickAnimation() {
-        if (!SidebarConfigSection.INSTANCE.current().enabled()) return;
+        if (!SidebarConfig.get().enabled) return;
         String[] frames = renderedFrames;
         if (frames.length == 0) return;
         int i = animationIndex.getAndUpdate(old -> (old + 1) % frames.length);
@@ -135,24 +135,24 @@ public final class LobbySidebar {
     }
 
     private void refreshAll() {
-        SidebarConfig cfg = SidebarConfigSection.INSTANCE.current();
+        SidebarConfig cfg = SidebarConfig.get();
         applyEnabledState(cfg);
-        if (!cfg.enabled()) return;
+        if (!cfg.enabled) return;
 
         var onlinePlayers = MinecraftServer.getConnectionManager().getOnlinePlayers();
         if (onlinePlayers.isEmpty()) return;
 
-        updateGlobalLine(ID_WELCOME, cfg.welcomeText());
-        for (int i = 0; i < cfg.descriptionLines().size(); i++) {
-            updateGlobalLine(ID_DESC + i, cfg.descriptionLines().get(i));
+        updateGlobalLine(ID_WELCOME, cfg.welcomeText);
+        for (int i = 0; i < cfg.descriptionLines.size(); i++) {
+            updateGlobalLine(ID_DESC + i, cfg.descriptionLines.get(i));
         }
-        updateGlobalLine(ID_MODES_HEADER, cfg.modesHeader());
+        updateGlobalLine(ID_MODES_HEADER, cfg.modesHeader);
 
-        for (ServerInfo server : ServerRegistry.LOBBY_SERVERS) {
+        for (ServerInfo server : ServerRegistry.servers()) {
             updateGlobalLine(serverLineId(server), formatServerLine(server, cfg));
         }
 
-        String pingTemplate = cfg.pingTemplate();
+        String pingTemplate = cfg.pingTemplate;
         for (Player player : onlinePlayers) {
             updatePing(player, pingTemplate);
         }
@@ -165,7 +165,7 @@ public final class LobbySidebar {
      * no stomping on per-viewer ping overrides.
      */
     private void applyEnabledState(SidebarConfig cfg) {
-        boolean enabled = cfg.enabled();
+        boolean enabled = cfg.enabled;
         if (enabled == lastEnabledApplied) return;
         lastEnabledApplied = enabled;
         var players = MinecraftServer.getConnectionManager().getOnlinePlayers();
@@ -184,9 +184,9 @@ public final class LobbySidebar {
     }
 
     public void show(Player player) {
-        if (!SidebarConfigSection.INSTANCE.current().enabled()) return;
+        if (!SidebarConfig.get().enabled) return;
         sidebar.addViewer(player);
-        updatePing(player, SidebarConfigSection.INSTANCE.current().pingTemplate());
+        updatePing(player, SidebarConfig.get().pingTemplate);
     }
 
     public void hide(Player player) {
@@ -211,11 +211,11 @@ public final class LobbySidebar {
 
     private static String formatServerLine(ServerInfo server, SidebarConfig cfg) {
         String status = switch (server.status()) {
-            case ONLINE -> cfg.statusOnline().replace("{count}", String.valueOf(server.online()));
-            case SOON -> cfg.statusSoon();
-            case OFFLINE -> cfg.statusOffline();
+            case ONLINE -> cfg.statusOnline.replace("{count}", String.valueOf(server.online()));
+            case SOON -> cfg.statusSoon;
+            case OFFLINE -> cfg.statusOffline;
         };
-        return cfg.serverLineTemplate()
+        return cfg.serverLineTemplate
                 .replace("{world}", server.worldName())
                 .replace("{status}", status);
     }

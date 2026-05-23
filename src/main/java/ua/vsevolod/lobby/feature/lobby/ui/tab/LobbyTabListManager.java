@@ -10,11 +10,13 @@ import net.minestom.server.network.packet.server.play.PlayerInfoUpdatePacket;
 import net.minestom.server.network.packet.server.play.PlayerListHeaderAndFooterPacket;
 import net.minestom.server.utils.PacketSendingUtils;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.lobby.player.time.PlayerTimeZoneService;
 import ua.vsevolod.lobby.integration.spark.SparkService;
 import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -73,7 +75,7 @@ public final class LobbyTabListManager {
             lastRendered.remove(id);
             lastBroadcastLatency.remove(id);
         });
-        TabConfigSection.INSTANCE.addChangeListener(this::rescheduleRefresh);
+        TabConfig.addListener(this::rescheduleRefresh);
         scheduleRefresh();
         scheduleLatencyBroadcast();
     }
@@ -86,7 +88,7 @@ public final class LobbyTabListManager {
     private void scheduleRefresh() {
         refreshTask = MinecraftServer.getSchedulerManager()
                 .buildTask(this::updateAll)
-                .repeat(Duration.ofMillis(TabConfigSection.INSTANCE.current().updateIntervalMs()))
+                .repeat(Duration.ofMillis(TabConfig.get().updateIntervalMs))
                 .schedule();
     }
 
@@ -98,30 +100,28 @@ public final class LobbyTabListManager {
     }
 
     public void updateAll() {
-        TabConfig cfg = TabConfigSection.INSTANCE.current();
+        TabConfig cfg = TabConfig.get();
         Collection<Player> onlinePlayers = MinecraftServer.getConnectionManager().getOnlinePlayers();
         if (onlinePlayers.isEmpty()) return;
 
-        String formattedMspt = SparkService.getMsptFormatted();
-        String time = LocalTime.now().format(formatterFor(cfg.timeFormat()));
+        String state = cfg.stateFor(SparkService.getMspt());
+        DateTimeFormatter fmt = formatterFor(cfg.timeFormat);
+        String defaultTime = LocalTime.now(zoneFor(cfg.timeZone)).format(fmt)
+                + " <dark_gray>(" + cfg.timeZoneLabel + ")";
         int online = onlinePlayers.size();
+        PlayerTimeZoneService tz = PlayerTimeZoneService.get();
 
-        // Render two templates — one with the MSPT segment populated for BYPASS users, one
-        // without — keeping {ping} unsubstituted. Per-player work below is a single replace.
-        String bypassMsptPart = cfg.msptBypassTemplate().replace("{mspt}", formattedMspt);
-        String headerBypass = renderTemplate(cfg.header(), time, online, bypassMsptPart);
-        String headerNormal = renderTemplate(cfg.header(), time, online, "");
-        String footerBypass = renderTemplate(cfg.footer(), time, online, bypassMsptPart);
-        String footerNormal = renderTemplate(cfg.footer(), time, online, "");
+        // Header/footer rendered once; {ping} and {time} are per-player (substituted below).
+        String headerTpl = renderTemplate(cfg.header, online, state);
+        String footerTpl = renderTemplate(cfg.footer, online, state);
 
         for (Player player : onlinePlayers) {
-            boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
-            String headerTpl = bypass ? headerBypass : headerNormal;
-            String footerTpl = bypass ? footerBypass : footerNormal;
-
             String pingStr = Integer.toString(player.getLatency());
-            String headerStr = headerTpl.indexOf('{') < 0 ? headerTpl : headerTpl.replace("{ping}", pingStr);
-            String footerStr = footerTpl.indexOf('{') < 0 ? footerTpl : footerTpl.replace("{ping}", pingStr);
+            String timeStr = playerTime(player, tz, fmt, defaultTime);
+            String headerStr = headerTpl.indexOf('{') < 0 ? headerTpl
+                    : headerTpl.replace("{ping}", pingStr).replace("{time}", timeStr);
+            String footerStr = footerTpl.indexOf('{') < 0 ? footerTpl
+                    : footerTpl.replace("{ping}", pingStr).replace("{time}", timeStr);
 
             RenderedTab previous = lastRendered.get(player.getUuid());
             if (previous != null && previous.header.equals(headerStr) && previous.footer.equals(footerStr)) {
@@ -181,12 +181,26 @@ public final class LobbyTabListManager {
         return timeFormatter.get();
     }
 
+    private ZoneId cachedZone = ZoneId.systemDefault();
+    private String cachedZoneId = "";
+
+    /** Resolves the configured {@code timeZone}; falls back to the previous valid zone. */
+    private ZoneId zoneFor(String zoneId) {
+        if (zoneId != null && !zoneId.equals(cachedZoneId)) {
+            try {
+                cachedZone = ZoneId.of(zoneId);
+                cachedZoneId = zoneId;
+            } catch (Exception ignored) { /* keep previous */ }
+        }
+        return cachedZone;
+    }
+
     /**
      * Substitutes everything but {@code {ping}} (kept verbatim for the per-player pass).
      * Lines with no placeholder are appended as-is — avoids the StringBuilder allocations
      * inside {@code String.replace} for the (common) static lines.
      */
-    private static String renderTemplate(List<String> lines, String time, int online, String msptPart) {
+    private static String renderTemplate(List<String> lines, int online, String state) {
         if (lines.isEmpty()) return "";
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < lines.size(); i++) {
@@ -195,10 +209,32 @@ public final class LobbyTabListManager {
             if (line.indexOf('{') < 0) { sb.append(line); continue; }
             sb.append(line
                     .replace("{online}", Integer.toString(online))
-                    .replace("{time}", time)
-                    .replace("{mspt}", msptPart));
+                    .replace("{state}", state));
         }
         return sb.toString();
+    }
+
+    /** Per-player time: their IP zone if opted in and resolved, else the configured default. */
+    private static String playerTime(Player player, PlayerTimeZoneService tz,
+                                     DateTimeFormatter fmt, String defaultTime) {
+        if (tz != null && tz.isIpMode(player.getUuid())) {
+            java.util.Optional<ZoneId> zone = tz.zoneOf(player.getUuid());
+            if (zone.isPresent()) {
+                return LocalTime.now(zone.get()).format(fmt)
+                        + " <dark_gray>(" + offsetLabel(zone.get()) + ")";
+            }
+        }
+        return defaultTime;
+    }
+
+    /** Short UTC-offset label for a zone, e.g. {@code UTC+3}. */
+    private static String offsetLabel(ZoneId zone) {
+        int seconds = zone.getRules().getOffset(java.time.Instant.now()).getTotalSeconds();
+        if (seconds == 0) return "UTC";
+        int hours = seconds / 3600;
+        int minutes = Math.abs(seconds % 3600) / 60;
+        String label = "UTC" + (seconds > 0 ? "+" : "-") + Math.abs(hours);
+        return minutes == 0 ? label : label + ":" + String.format("%02d", minutes);
     }
 
     private record RenderedTab(String header, String footer) {}

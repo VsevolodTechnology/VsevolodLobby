@@ -65,7 +65,7 @@ public final class LobbyMusicSelectorMenu implements LobbyEventRegistration {
                 musicManager.playSpecific(player, key);
                 player.sendMessage(buildPrefix()
                         .append(Component.text("Сейчас играет: ", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
-                        .append(Component.text(trackName != null ? trackName : key, TextColor.color(0xF1BB58))));
+                        .append(Component.text(trackName != null ? trackName : key, TextColor.color(0xAE3AF3))));
             }
         });
     }
@@ -73,7 +73,7 @@ public final class LobbyMusicSelectorMenu implements LobbyEventRegistration {
     // ── Menu construction ───────────────────────────────────────────────────
 
     private Inventory buildMenu() {
-        Inventory inv = new Inventory(InventoryType.CHEST_6_ROW, Text.c("&8Выбор музыки"));
+        Inventory inv = new Inventory(InventoryType.CHEST_6_ROW, Text.c("<dark_gray>Выбор музыки"));
 
         // Row 0: decoration + random in center
         ItemStack glass = ItemStack.builder(Material.BLACK_STAINED_GLASS_PANE)
@@ -110,7 +110,7 @@ public final class LobbyMusicSelectorMenu implements LobbyEventRegistration {
 
         return ItemStack.builder(Material.JUKEBOX)
                 .set(DataComponents.CUSTOM_NAME,
-                        Text.c("&#F1BB58&lС&#F1B858&lл&#F1B558&lу&#F1B258&lч&#F1AF58&lа&#F1AC58&lй&#F1A958&lн&#F1A658&lа&#F1A358&lя")
+                        Text.c("<gradient:#AE3AF3:#985DBC><bold>Случайная</bold></gradient>")
                                 .decoration(TextDecoration.ITALIC, false))
                 .set(DataComponents.LORE, lore)
                 .set(TRACK_KEY_TAG, RANDOM_MARKER)
@@ -119,7 +119,7 @@ public final class LobbyMusicSelectorMenu implements LobbyEventRegistration {
     }
 
     private static ItemStack buildTrackItem(MenuEntry entry) {
-        Component name = Text.c("&#F1BB58" + entry.name).decoration(TextDecoration.ITALIC, false);
+        Component name = Text.c("<#AE3AF3>" + entry.name).decoration(TextDecoration.ITALIC, false);
 
         List<Component> lore = Stream.<Component>of(
                 Component.space(),
@@ -141,7 +141,9 @@ public final class LobbyMusicSelectorMenu implements LobbyEventRegistration {
 
     private static Component buildPrefix() {
         return Component.text("[", NamedTextColor.DARK_GRAY)
-                .append(LobbyMusicManager.MUSIC_TEXT)
+                .append(ua.vsevolod.lobby.util.Text.raw(
+                        ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfig
+                                .get().toggleItems.music().name()))
                 .append(Component.text("]", NamedTextColor.DARK_GRAY))
                 .append(Component.space());
     }

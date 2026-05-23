@@ -32,17 +32,14 @@ public final class ConsoleListener {
                         case SUCCESS -> {
                         }
 
-                        case INVALID_SYNTAX -> {
-                            console.sendMessage("Invalid syntax for command: " + result.getInput());
-                        }
+                        case INVALID_SYNTAX ->
+                            System.out.println("[Console] Invalid syntax: " + result.getInput());
 
-                        case CANCELLED -> {
-                            console.sendMessage("Command cancelled: " + result.getInput());
-                        }
+                        case CANCELLED ->
+                            System.out.println("[Console] Command cancelled: " + result.getInput());
 
-                        case UNKNOWN -> {
-                            console.sendMessage("Unknown command: " + result.getInput());
-                        }
+                        case UNKNOWN ->
+                            System.out.println("[Console] Unknown command: " + result.getInput());
                     }
                 }
 

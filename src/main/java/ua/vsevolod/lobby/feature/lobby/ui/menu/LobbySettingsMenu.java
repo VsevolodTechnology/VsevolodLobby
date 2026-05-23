@@ -19,6 +19,8 @@ import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicManager;
 import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicSelectorMenu;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferences;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
+import ua.vsevolod.lobby.feature.lobby.player.time.PlayerTimeZoneService;
+import ua.vsevolod.lobby.feature.lobby.player.protocol.LobbyProtocolWarningService;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarToggle;
 import ua.vsevolod.lobby.util.Text;
 
@@ -37,13 +39,24 @@ public final class LobbySettingsMenu {
     private static final int MUSIC_SLOT = 11;
     private static final int SCOREBOARD_SLOT = 13;
     private static final int POSITION_SLOT = 15;
+    private static final int VERSION_WARNING_SLOT = 17;
+    private static final int TIME_SLOT = 20;
     private static final int MUSIC_SELECTOR_SLOT = 22;
 
-    private static final TextColor ACCENT = TextColor.color(0xF1BB58);
+    private static final TextColor ACCENT = TextColor.color(0xAE3AF3);
     private static final TextColor INFO_BLUE = TextColor.color(0x65D1FC);
     private static final TextColor TEXT_WHITE = TextColor.color(0xFFF2E0);
     private static final TextColor GREEN = TextColor.color(0x8EB126);
     private static final TextColor RED = TextColor.color(0xFA3B3B);
+
+    private static final Component MSG_MUSIC_ON       = buildSettingsMsg("Музыка", "включена", true);
+    private static final Component MSG_MUSIC_OFF      = buildSettingsMsg("Музыка", "выключена", false);
+    private static final Component MSG_POSITION_ON    = buildSettingsMsg("Сохранение позиции", "включено", true);
+    private static final Component MSG_POSITION_OFF   = buildSettingsMsg("Сохранение позиции", "выключено", false);
+    private static final Component MSG_VERSION_WARNING_ON  = buildSettingsMsg("Подсказка о версии", "включена", true);
+    private static final Component MSG_VERSION_WARNING_OFF = buildSettingsMsg("Подсказка о версии", "выключена", false);
+    private static final Component MSG_TIME_ON  = buildSettingsMsg("Время по IP", "включено", true);
+    private static final Component MSG_TIME_OFF = buildSettingsMsg("Время по IP", "выключено", false);
 
     private static final ItemStack HOTBAR_ITEM = buildHotbarItem();
     private static final ItemStack MUSIC_SELECTOR_ITEM = buildMusicSelectorItem();
@@ -53,6 +66,10 @@ public final class LobbySettingsMenu {
     private static final ItemStack SCOREBOARD_OFF = toggleItem(Material.GRAY_DYE, "Скорборд", false, "Таблица очков сбоку.", "scoreboard");
     private static final ItemStack POSITION_ON = toggleItem(Material.RECOVERY_COMPASS, "Сохранение позиции", true, "Запоминает точку выхода.", "position");
     private static final ItemStack POSITION_OFF = toggleItem(Material.GRAY_DYE, "Сохранение позиции", false, "Запоминает точку выхода.", "position");
+    private static final ItemStack VERSION_WARNING_ON  = toggleItem(Material.WRITABLE_BOOK, "Подсказка о версии", true, "BossBar с рекомендацией обновить клиент.", "version-warning");
+    private static final ItemStack VERSION_WARNING_OFF = toggleItem(Material.GRAY_DYE, "Подсказка о версии", false, "BossBar с рекомендацией обновить клиент.", "version-warning");
+    private static final ItemStack TIME_ON  = timeToggleItem(true);
+    private static final ItemStack TIME_OFF = timeToggleItem(false);
     private static final ItemStack DECOR = ItemStack.builder(Material.BLACK_STAINED_GLASS_PANE)
             .set(DataComponents.CUSTOM_NAME, Component.empty())
             .hideExtraTooltip()
@@ -64,18 +81,21 @@ public final class LobbySettingsMenu {
     private final LobbyMusicManager musicManager;
     private final SidebarToggle sidebarToggle;
     private final LobbyMusicSelectorMenu musicSelectorMenu;
+    private final LobbyProtocolWarningService protocolWarningService;
     private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();
 
     public LobbySettingsMenu(
             PlayerPreferencesService preferencesService,
             LobbyMusicManager musicManager,
             SidebarToggle sidebarToggle,
-            LobbyMusicSelectorMenu musicSelectorMenu
+            LobbyMusicSelectorMenu musicSelectorMenu,
+            LobbyProtocolWarningService protocolWarningService
     ) {
         this.preferencesService = preferencesService;
         this.musicManager = musicManager;
         this.sidebarToggle = sidebarToggle;
         this.musicSelectorMenu = musicSelectorMenu;
+        this.protocolWarningService = protocolWarningService;
     }
 
     public void register(EventNode<Event> node) {
@@ -102,11 +122,7 @@ public final class LobbySettingsMenu {
                 case "music" -> {
                     musicManager.toggle(player);
                     boolean nowEnabled = musicManager.isEnabled(player);
-                    player.sendMessage(settingsMessage(
-                            "Музыка",
-                            nowEnabled ? "включена" : "выключена",
-                            nowEnabled
-                    ));
+                    player.sendMessage(nowEnabled ? MSG_MUSIC_ON : MSG_MUSIC_OFF);
                     refreshMenu(player, inv);
                 }
                 case "scoreboard" -> {
@@ -117,11 +133,24 @@ public final class LobbySettingsMenu {
                     PlayerPreferences prefs = preferencesService.get(player.getUuid());
                     boolean nowEnabled = !prefs.positionSaveEnabled();
                     preferencesService.savePositionSaveEnabled(player.getUuid(), nowEnabled);
-                    player.sendMessage(settingsMessage(
-                            "Сохранение позиции",
-                            nowEnabled ? "включено" : "выключено",
-                            nowEnabled
-                    ));
+                    player.sendMessage(nowEnabled ? MSG_POSITION_ON : MSG_POSITION_OFF);
+                    refreshMenu(player, inv);
+                }
+                case "version-warning" -> {
+                    PlayerPreferences prefs = preferencesService.get(player.getUuid());
+                    boolean nowEnabled = !prefs.protocolWarningEnabled();
+                    preferencesService.saveProtocolWarningEnabled(player.getUuid(), nowEnabled);
+                    if (!nowEnabled) protocolWarningService.hideFor(player);
+                    player.sendMessage(nowEnabled ? MSG_VERSION_WARNING_ON : MSG_VERSION_WARNING_OFF);
+                    refreshMenu(player, inv);
+                }
+                case "time-by-ip" -> {
+                    PlayerTimeZoneService tz = PlayerTimeZoneService.get();
+                    if (tz != null) {
+                        boolean nowEnabled = !tz.isIpMode(player.getUuid());
+                        tz.setIpMode(player.getUuid(), nowEnabled);
+                        player.sendMessage(nowEnabled ? MSG_TIME_ON : MSG_TIME_OFF);
+                    }
                     refreshMenu(player, inv);
                 }
                 case "music-selector" -> {
@@ -137,8 +166,9 @@ public final class LobbySettingsMenu {
         boolean musicOn = musicManager.isEnabled(player);
         boolean sidebarVisible = !sidebarToggle.isHidden(player);
         boolean positionSave = prefs.positionSaveEnabled();
+        boolean versionWarning = prefs.protocolWarningEnabled();
 
-        Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Text.c("&8Настройки"));
+        Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Text.c("<dark_gray>Настройки"));
         inv.setTag(SETTINGS_TAG, "settings");
 
         for (int i = 0; i < 27; i++) {
@@ -148,19 +178,30 @@ public final class LobbySettingsMenu {
         inv.setItemStack(MUSIC_SLOT, musicOn ? MUSIC_ON : MUSIC_OFF);
         inv.setItemStack(SCOREBOARD_SLOT, sidebarVisible ? SCOREBOARD_ON : SCOREBOARD_OFF);
         inv.setItemStack(POSITION_SLOT, positionSave ? POSITION_ON : POSITION_OFF);
+        inv.setItemStack(VERSION_WARNING_SLOT, versionWarning ? VERSION_WARNING_ON : VERSION_WARNING_OFF);
+        inv.setItemStack(TIME_SLOT, isTimeByIp(player) ? TIME_ON : TIME_OFF);
         inv.setItemStack(MUSIC_SELECTOR_SLOT, MUSIC_SELECTOR_ITEM);
 
         player.openInventory(inv);
     }
 
     private void refreshMenu(Player player, Inventory inv) {
+        PlayerPreferences prefs = preferencesService.get(player.getUuid());
         boolean musicOn = musicManager.isEnabled(player);
         boolean sidebarVisible = !sidebarToggle.isHidden(player);
-        boolean positionSave = preferencesService.get(player.getUuid()).positionSaveEnabled();
+        boolean positionSave = prefs.positionSaveEnabled();
+        boolean versionWarning = prefs.protocolWarningEnabled();
 
         inv.setItemStack(MUSIC_SLOT, musicOn ? MUSIC_ON : MUSIC_OFF);
         inv.setItemStack(SCOREBOARD_SLOT, sidebarVisible ? SCOREBOARD_ON : SCOREBOARD_OFF);
         inv.setItemStack(POSITION_SLOT, positionSave ? POSITION_ON : POSITION_OFF);
+        inv.setItemStack(VERSION_WARNING_SLOT, versionWarning ? VERSION_WARNING_ON : VERSION_WARNING_OFF);
+        inv.setItemStack(TIME_SLOT, isTimeByIp(player) ? TIME_ON : TIME_OFF);
+    }
+
+    private static boolean isTimeByIp(Player player) {
+        PlayerTimeZoneService tz = PlayerTimeZoneService.get();
+        return tz != null && tz.isIpMode(player.getUuid());
     }
 
     // ── Hotbar item ──────────────────────────────────────────────────────────
@@ -171,7 +212,7 @@ public final class LobbySettingsMenu {
 
     private static ItemStack buildHotbarItem() {
         Component name = Component.text()
-                .append(Text.c("&#F1BB58&lН&#F1B858&lа&#F1B558&lс&#F1B258&lт&#F1AF58&lр&#F1AC58&lо&#F1A958&lй&#F1A658&lк&#F1A358&lи"))
+                .append(Text.c("<gradient:#AE3AF3:#985DBC><bold>Настройки</bold></gradient>"))
                 .append(Component.text(" [", NamedTextColor.DARK_GRAY))
                 .append(Component.text("Открыть", GREEN))
                 .append(Component.text("]", NamedTextColor.DARK_GRAY))
@@ -188,7 +229,7 @@ public final class LobbySettingsMenu {
                         .append(Component.text(" - ", NamedTextColor.GRAY))
                         .append(Component.text("сохранение позиции.", TEXT_WHITE)),
                 Component.space(),
-                Component.text("➥ ПКМ — открыть настройки", NamedTextColor.YELLOW)
+                Component.text("➥ ПКМ — открыть настройки", ACCENT)
         ).map(c -> c.decoration(TextDecoration.ITALIC, false)).toList();
 
         return ItemStack.builder(Material.COMPARATOR)
@@ -203,7 +244,7 @@ public final class LobbySettingsMenu {
 
     private static ItemStack buildMusicSelectorItem() {
         Component name = Component.text()
-                .append(Text.c("&#65D1FC&lВ&#62CEF9&lы&#5FCBF6&lб&#5CC8F3&lо&#59C5F0&lр &#53BFEA&lм&#50BCE7&lу&#4DB9E4&lз&#4AB6E1&lы&#47B3DE&lк&#44B0DB&lи"))
+                .append(Text.c("<gradient:#65D1FC:#59C5F0><bold>Выбор</bold></gradient> <gradient:#53BFEA:#44B0DB><bold>музыки</bold></gradient>"))
                 .decoration(TextDecoration.ITALIC, false)
                 .build();
 
@@ -216,7 +257,7 @@ public final class LobbySettingsMenu {
                         .append(Component.text(" - ", NamedTextColor.GRAY))
                         .append(Component.text("или случайный режим.", TEXT_WHITE)),
                 Component.space(),
-                Component.text("➥ Нажмите, чтобы открыть", NamedTextColor.YELLOW)
+                Component.text("➥ Нажмите, чтобы открыть", ACCENT)
         ).map(c -> c.decoration(TextDecoration.ITALIC, false)).toList();
 
         return ItemStack.builder(Material.JUKEBOX)
@@ -253,7 +294,7 @@ public final class LobbySettingsMenu {
                         .append(Component.text(" - ", NamedTextColor.GRAY))
                         .append(Component.text(description, TEXT_WHITE)),
                 Component.space(),
-                Component.text("➥ Нажмите, чтобы переключить", NamedTextColor.YELLOW)
+                Component.text("➥ Нажмите, чтобы переключить", ACCENT)
         ).map(c -> c.decoration(TextDecoration.ITALIC, false)).toList();
 
         return ItemStack.builder(material)
@@ -264,13 +305,58 @@ public final class LobbySettingsMenu {
                 .build();
     }
 
-    private static Component settingsMessage(String setting, String state, boolean enabled) {
+    private static ItemStack timeToggleItem(boolean enabled) {
+        Component status = enabled
+                ? Component.text("Включено", NamedTextColor.GREEN)
+                : Component.text("Выключено", NamedTextColor.RED);
+
+        Component name = Component.text()
+                .append(Component.text("Время по IP ", ACCENT))
+                .append(Component.text("[", NamedTextColor.DARK_GRAY))
+                .append(enabled ? Component.text("Вкл", GREEN) : Component.text("Выкл", RED))
+                .append(Component.text("]", NamedTextColor.DARK_GRAY))
+                .decoration(TextDecoration.ITALIC, false)
+                .build();
+
+        List<Component> lore = Stream.<Component>of(
+                Component.space(),
+                Component.text(" «Информация»", INFO_BLUE),
+                Component.empty()
+                        .append(Component.text(" - ", NamedTextColor.GRAY))
+                        .append(Component.text("Статус: ", TEXT_WHITE))
+                        .append(status),
+                Component.empty()
+                        .append(Component.text(" - ", NamedTextColor.GRAY))
+                        .append(Component.text("Время в TAB по твоему", TEXT_WHITE)),
+                Component.empty()
+                        .append(Component.text(" - ", NamedTextColor.GRAY))
+                        .append(Component.text("часовому поясу.", TEXT_WHITE)),
+                Component.space(),
+                Component.empty()
+                        .append(Component.text(" ⚠ ", TextColor.color(0xD9A6F0)))
+                        .append(Component.text("Пояс определяется по IP.", TEXT_WHITE)),
+                Component.empty()
+                        .append(Component.text("   ", NamedTextColor.GRAY))
+                        .append(Component.text("С VPN время может быть неточным.", NamedTextColor.GRAY)),
+                Component.space(),
+                Component.text("➥ Нажмите, чтобы переключить", ACCENT)
+        ).map(c -> c.decoration(TextDecoration.ITALIC, false)).toList();
+
+        return ItemStack.builder(enabled ? Material.CLOCK : Material.GRAY_DYE)
+                .set(DataComponents.CUSTOM_NAME, name)
+                .set(DataComponents.LORE, lore)
+                .set(ACTION_TAG, "time-by-ip")
+                .hideExtraTooltip()
+                .build();
+    }
+
+    private static Component buildSettingsMsg(String setting, String state, boolean enabled) {
         Component stateComponent = enabled
                 ? Component.text(state, TextColor.color(0x81E366))
                 : Component.text(state, TextColor.color(0xE36666));
 
         return Component.text("[", NamedTextColor.DARK_GRAY)
-                .append(Text.c("&#F1BB58&lНастройки"))
+                .append(Text.c("<#AE3AF3><bold>Настройки"))
                 .append(Component.text("]", NamedTextColor.DARK_GRAY))
                 .append(Component.space())
                 .append(Component.text(setting + ": ", TEXT_WHITE))

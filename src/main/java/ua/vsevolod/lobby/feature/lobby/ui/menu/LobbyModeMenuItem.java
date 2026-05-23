@@ -46,7 +46,7 @@ public final class LobbyModeMenuItem {
                         Component.empty()
                                 .append(SPACE_PREFIX)
                                 .append(Component.text("Статусы: ", TextColor.color(0xFFF2E0)))
-                                .append(Component.text("онлайн, загрузка, оффлайн", TextColor.color(0xF1BB58))),
+                                .append(Component.text("онлайн, загрузка, оффлайн", TextColor.color(0xAE3AF3))),
 
                         Component.empty()
                                 .append(SPACE_PREFIX)
@@ -63,7 +63,7 @@ public final class LobbyModeMenuItem {
                 .toList();
 
         return ItemStack.builder(Material.COMPASS)
-                .set(DataComponents.CUSTOM_NAME, Text.c("&#F1BB58&lВ&#F1BA58&lы&#F1B958&lб&#F1B858&lо&#F1B758&lр &#F1B458&lр&#F1B358&lе&#F1B258&lж&#F1B158&lи&#F1B058&lм&#F1AF58&lа").decoration(TextDecoration.ITALIC, false))
+                .set(DataComponents.CUSTOM_NAME, Text.c("<gradient:#AE3AF3:#985DBC><bold>Выбор</bold></gradient> <gradient:#985DBC:#985DBC><bold>режима</bold></gradient>").decoration(TextDecoration.ITALIC, false))
                 .set(DataComponents.LORE, lore)
                 .set(MENU_ITEM_TAG, (byte) 1)
                 .hideExtraTooltip()

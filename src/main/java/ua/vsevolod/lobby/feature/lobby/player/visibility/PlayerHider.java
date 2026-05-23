@@ -17,10 +17,10 @@ import net.minestom.server.item.Material;
 import net.minestom.server.network.packet.server.play.PlayerInfoRemovePacket;
 import net.minestom.server.network.packet.server.play.PlayerInfoUpdatePacket;
 import net.minestom.server.tag.Tag;
-import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpc;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.ToggleItemDefinition;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
-import ua.vsevolod.lobby.util.Text;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -103,22 +103,10 @@ public final class PlayerHider {
         if (last != null && (now - last) < TOGGLE_COOLDOWN_MS) return;
         if (isHidden(player)) {
             hiddenPlayers.remove(player.getUuid());
-            player.sendMessage(
-                    Component.text("[", NamedTextColor.DARK_GRAY).append(HIDER_TEXT).append(Component.text("]", NamedTextColor.DARK_GRAY))
-                            .append(Component.space())
-                            .append(Component.text("Вы", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)).append(Component.space())
-                            .append(Component.text("включили", TextColor.color(0x81E366))).append(Component.space())
-                            .append(Component.text("видимость игроков", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
-            );
+            player.sendMessage(JoinItemsConfig.get().toggleItems.players().message(true));
         } else {
             hiddenPlayers.add(player.getUuid());
-            player.sendMessage(
-                    Component.text("[", NamedTextColor.DARK_GRAY).append(HIDER_TEXT).append(Component.text("]", NamedTextColor.DARK_GRAY))
-                            .append(Component.space())
-                            .append(Component.text("Вы", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)).append(Component.space())
-                            .append(Component.text("выключили", TextColor.color(0xE36666))).append(Component.space())
-                            .append(Component.text("видимость игроков", LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))
-            );
+            player.sendMessage(JoinItemsConfig.get().toggleItems.players().message(false));
         }
 
         applyWorldVisibilityRule(player);
@@ -145,23 +133,48 @@ public final class PlayerHider {
         }
     }
 
+    /**
+     * Refresh the player's view of the tab list — show or hide every OTHER online player.
+     *
+     * <p>Previously this sent one {@code PlayerInfoRemovePacket} / {@code PlayerInfoUpdatePacket}
+     * per target (so toggling visibility cost N packets at 100 online). Now we build a single
+     * batched packet and send it once — N targets, 1 packet.</p>
+     */
     private void refreshTabFor(Player player, java.util.Collection<Player> onlinePlayers) {
         boolean hidden = isHidden(player);
-        for (Player target : onlinePlayers) {
-            if (target == player) continue;
-            if (hidden) hideFromTab(player, target);
-            else        showInTab(player, target);
+        if (hidden) {
+            java.util.List<UUID> uuids = new java.util.ArrayList<>(onlinePlayers.size());
+            for (Player target : onlinePlayers) {
+                if (target == player) continue;
+                uuids.add(target.getUuid());
+            }
+            if (!uuids.isEmpty()) {
+                player.getPlayerConnection().sendPacket(new PlayerInfoRemovePacket(uuids));
+            }
+        } else {
+            java.util.List<PlayerInfoUpdatePacket.Entry> entries = new java.util.ArrayList<>(onlinePlayers.size());
+            for (Player target : onlinePlayers) {
+                if (target == player) continue;
+                entries.add(tabEntryFor(target));
+            }
+            if (!entries.isEmpty()) {
+                player.getPlayerConnection().sendPacket(new PlayerInfoUpdatePacket(
+                        EnumSet.of(PlayerInfoUpdatePacket.Action.ADD_PLAYER, PlayerInfoUpdatePacket.Action.UPDATE_LISTED),
+                        entries
+                ));
+            }
         }
     }
 
+    /** Called from onSpawn — single-target reverse view (other → this player), batching is N/A. */
     private void hideFromTab(Player viewer, Player target) {
         viewer.getPlayerConnection().sendPacket(
                 new PlayerInfoRemovePacket(List.of(target.getUuid()))
         );
     }
 
-    private void showInTab(Player viewer, Player target) {
-        PlayerInfoUpdatePacket.Entry entry = new PlayerInfoUpdatePacket.Entry(
+    private static PlayerInfoUpdatePacket.Entry tabEntryFor(Player target) {
+        return new PlayerInfoUpdatePacket.Entry(
                 target.getUuid(),
                 target.getUsername(),
                 List.of(),
@@ -173,55 +186,19 @@ public final class PlayerHider {
                 0,
                 true
         );
-
-        viewer.getPlayerConnection().sendPacket(
-                new PlayerInfoUpdatePacket(
-                        EnumSet.of(PlayerInfoUpdatePacket.Action.ADD_PLAYER, PlayerInfoUpdatePacket.Action.UPDATE_LISTED),
-                        List.of(entry)
-                )
-        );
     }
-
-    private final static Component HIDER_TEXT = Text.c("&#F1BB58&lИ&#F1B958&lг&#F1B658&lр&#F1B458&lо&#F1B158&lк&#F1AF58&lи");
-    private final static Component HIDER_TEXT_ON = HIDER_TEXT.append(Component.space())
-            .append(Component.text("[", NamedTextColor.DARK_GRAY))
-            .append(Component.text("Видны", TextColor.color(0x8EB126)))
-            .append(Component.text("]", NamedTextColor.DARK_GRAY)).decoration(TextDecoration.ITALIC, false);
-    private final static Component HIDER_TEXT_OFF = HIDER_TEXT.append(Component.space())
-            .append(Component.text("[", NamedTextColor.DARK_GRAY))
-            .append(Component.text("Скрыты", TextColor.color(0xFA3B3B)))
-            .append(Component.text("]", NamedTextColor.DARK_GRAY)).decoration(TextDecoration.ITALIC, false);
-
-    private static final ItemStack TOGGLE_ITEM_SHOWING = buildToggleItem(false);
-    private static final ItemStack TOGGLE_ITEM_HIDDEN = buildToggleItem(true);
 
     private void updateToggleItem(Player player) {
-        player.getInventory().setItemStack(ITEM_SLOT, isHidden(player) ? TOGGLE_ITEM_HIDDEN : TOGGLE_ITEM_SHOWING);
+        player.getInventory().setItemStack(ITEM_SLOT, buildToggleItem(isHidden(player)));
     }
 
+    /** Builds the player-visibility toggle item live from {@code config/toggle-items.yml}. */
     private static ItemStack buildToggleItem(boolean hidden) {
-        List<Component> lore = Stream.<Component>of(
-                Component.space(),
-                Component.text(" «Информация»", TextColor.color(0x65D1FC)),
-                Component.empty()
-                        .append(Component.text(" - ", NamedTextColor.GRAY))
-                        .append(Component.text("Статус: ", TextColor.color(0xFFF2E0)))
-                        .append(hidden
-                                ? Component.text("Скрыты ", NamedTextColor.RED).append(Component.text("(FPS+)", NamedTextColor.GRAY))
-                                : Component.text("Отображаются", NamedTextColor.GREEN)),
-                Component.empty()
-                        .append(Component.text(" - ", NamedTextColor.GRAY))
-                        .append(Component.text("Позволяет убрать лишних", TextColor.color(0xFFF2E0))),
-                Component.empty()
-                        .append(Component.text(" - ", NamedTextColor.GRAY))
-                        .append(Component.text("игроков в лобби.", TextColor.color(0xFFF2E0))),
-                Component.space(),
-                Component.text("➥ ПКМ — переключить", NamedTextColor.YELLOW)
-        ).map(c -> c.decoration(TextDecoration.ITALIC, false)).toList();
-
-        return ItemStack.builder(hidden ? Material.GRAY_DYE : Material.LIME_DYE)
-                .set(DataComponents.CUSTOM_NAME, hidden ? HIDER_TEXT_OFF : HIDER_TEXT_ON)
-                .set(DataComponents.LORE, lore)
+        ToggleItemDefinition def = JoinItemsConfig.get().toggleItems.players();
+        boolean enabled = !hidden;
+        return ItemStack.builder(def.material(enabled))
+                .set(DataComponents.CUSTOM_NAME, def.displayName(enabled))
+                .set(DataComponents.LORE, def.lore(enabled))
                 .set(TOGGLE_ITEM_TAG, hidden ? ITEM_HIDDEN : ITEM_SHOWING)
                 .build();
     }

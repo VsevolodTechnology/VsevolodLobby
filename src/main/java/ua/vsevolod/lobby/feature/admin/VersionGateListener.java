@@ -2,11 +2,15 @@ package ua.vsevolod.lobby.feature.admin;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.player.AsyncPlayerConfigurationEvent;
 import ua.vsevolod.lobby.config.LobbyConfig;
 
 public final class VersionGateListener {
+
+    private static final TextColor PROJECT_WHITE = LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL;
+    private static final TextColor MUTED = NamedTextColor.GRAY;
 
     private VersionGateListener() {}
 
@@ -22,10 +26,12 @@ public final class VersionGateListener {
 
             if (VersionGate.allows(protocol)) return;
 
-            String msg = "§cВаша версия Minecraft не поддерживается.\n"
-                    + "§7Протокол: §f" + protocol + "\n"
-                    + "§7Допустимо: §f" + VersionGate.getMin() + " — " + VersionGate.getMax();
-            player.kick(Component.text(msg, NamedTextColor.RED));
+            Component msg = Component.text("Ваша версия Minecraft не поддерживается.\n", NamedTextColor.RED)
+                    .append(Component.text("Протокол: ", MUTED))
+                    .append(Component.text(protocol + "\n", PROJECT_WHITE))
+                    .append(Component.text("Допустимо: ", MUTED))
+                    .append(Component.text(VersionGate.getMin() + " — " + VersionGate.getMax(), PROJECT_WHITE));
+            player.kick(msg);
         });
     }
 }

@@ -1,5 +1,6 @@
 package ua.vsevolod.lobby.feature.lobby.player.join;
 
+import net.kyori.adventure.text.Component;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
 import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
@@ -7,11 +8,14 @@ import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.audio.music.LobbyMusicManager;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.LobbyNpcService;
 import ua.vsevolod.lobby.feature.lobby.player.LobbyPlayerProvider;
-import ua.vsevolod.lobby.feature.lobby.player.behavior.PlayerBehaviorConfigSection;
+import ua.vsevolod.lobby.feature.lobby.player.behavior.PlayerBehaviorConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.cutscene.CutsceneConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.cutscene.CutsceneService;
+import ua.vsevolod.lobby.feature.lobby.player.join.welcome.WelcomeAnimationService;
+import ua.vsevolod.lobby.feature.lobby.player.join.welcome.WelcomeConfig;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferences;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
 import ua.vsevolod.lobby.feature.lobby.player.protocol.LobbyProtocolWarningService;
-import ua.vsevolod.lobby.feature.lobby.ui.hologram.LobbyWelcomeHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.ParkourLeaderboardHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.LobbySidebar;
 import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarToggle;
@@ -23,33 +27,36 @@ public final class LobbyJoinInitializer {
     private final LobbySidebar sidebar;
     private final SidebarToggle sidebarToggle;
     private final LobbyProtocolWarningService protocolWarningService;
-    private final LobbyWelcomeHologramService hologramService;
     private final ParkourLeaderboardHologramService parkourLeaderboardHologramService;
     private final LobbyItemService itemService;
     private final LobbyNpcService npcService;
     private final PlayerPreferencesService preferencesService;
+    private final WelcomeAnimationService welcomeAnimationService;
+    private final CutsceneService cutsceneService;
 
     public LobbyJoinInitializer(
             LobbyMusicManager musicManager,
             LobbySidebar sidebar,
             SidebarToggle sidebarToggle,
             LobbyProtocolWarningService protocolWarningService,
-            LobbyWelcomeHologramService hologramService,
             ParkourLeaderboardHologramService parkourLeaderboardHologramService,
             LobbyItemService itemService,
             LobbyNpcService npcService,
-            PlayerPreferencesService preferencesService
+            PlayerPreferencesService preferencesService,
+            WelcomeAnimationService welcomeAnimationService,
+            CutsceneService cutsceneService
     ) {
         LobbyPlayerProvider.register();
         this.musicManager = musicManager;
         this.sidebar = sidebar;
         this.sidebarToggle = sidebarToggle;
         this.protocolWarningService = protocolWarningService;
-        this.hologramService = hologramService;
         this.parkourLeaderboardHologramService = parkourLeaderboardHologramService;
         this.itemService = itemService;
         this.npcService = npcService;
         this.preferencesService = preferencesService;
+        this.welcomeAnimationService = welcomeAnimationService;
+        this.cutsceneService = cutsceneService;
     }
 
     public void initialize(Player player) {
@@ -61,25 +68,37 @@ public final class LobbyJoinInitializer {
     }
 
     public void leave(Player player, boolean first) {
+        welcomeAnimationService.cancel(player.getUuid());
+        cutsceneService.cancel(player);
         LobbyModule.hologramManager.hideFrom(player);
         sidebar.hide(player);
-        hologramService.hideWelcome(player, first);
         parkourLeaderboardHologramService.hideFrom(player);
         npcService.hideFrom(player);
     }
 
     private void enterLobby(Player player, boolean sendWelcomeMessage) {
+        boolean willPlayCutscene = false;
+
         if (sendWelcomeMessage) {
-            player.sendMessage(LobbyConfig.Messages.welcome(player.getUsername()));
-//            requestClientProtocol(player); TODO
+            PlayerPreferences prefsBefore = preferencesService.get(player.getUuid());
+            boolean firstJoin = prefsBefore.firstSeenEpoch() == 0L;
+            long firstSeenEpoch = preferencesService.markFirstSeenIfAbsent(player.getUuid());
+
+            sendWelcomeChat(player);
             protocolWarningService.showIfNeeded(player);
+            welcomeAnimationService.play(player, firstJoin, firstSeenEpoch);
+
+            CutsceneConfig cutsceneCfg = CutsceneConfig.get();
+            willPlayCutscene = cutsceneCfg.enabled
+                    && !cutsceneCfg.waypoints.isEmpty()
+                    && (firstJoin || !cutsceneCfg.firstJoinOnly);
         }
 
         LobbyModule.hologramManager.showTo(player);
         setupProfile(player);
         setupState(player);
 
-        if (sendWelcomeMessage && PlayerBehaviorConfigSection.INSTANCE.current().restoreLastPosition()) {
+        if (sendWelcomeMessage && PlayerBehaviorConfig.get().restoreLastPosition) {
             PlayerPreferences prefs = preferencesService.get(player.getUuid());
             if (prefs.positionSaveEnabled()) {
                 Pos saved = prefs.lastPosition();
@@ -89,13 +108,30 @@ public final class LobbyJoinInitializer {
             }
         }
 
-        itemService.giveJoinItems(player);
         if (!sidebarToggle.isHidden(player)) {
             sidebar.show(player);
         }
-        hologramService.showWelcome(player, sendWelcomeMessage);
         parkourLeaderboardHologramService.showTo(player);
         npcService.showTo(player);
+
+        if (willPlayCutscene) {
+            // Defer hotbar items until the camera releases — keeps the cinematic clean of UI.
+            cutsceneService.play(player, () -> itemService.giveJoinItems(player));
+        } else {
+            itemService.giveJoinItems(player);
+        }
+    }
+
+    private void sendWelcomeChat(Player player) {
+        WelcomeConfig cfg = WelcomeConfig.get();
+        if (cfg.chatLines.isEmpty()) return;
+
+        String joined = String.join("\n", cfg.chatLines)
+                .replace("{player}",   player.getUsername())
+                .replace("{discord}",  cfg.discordUrl)
+                .replace("{telegram}", cfg.telegramUrl)
+                .replace("{studio}",   cfg.studioUrl);
+        player.sendMessage(Text.raw(joined));
     }
 
     private void setupProfile(Player player) {

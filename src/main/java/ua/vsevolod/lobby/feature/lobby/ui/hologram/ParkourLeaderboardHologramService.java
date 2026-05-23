@@ -7,6 +7,8 @@ import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Player;
 import net.minestom.server.entity.metadata.display.AbstractDisplayMeta;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
+import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.player.PlayerDisconnectEvent;
 import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.parkour.ParkourTimeFormatter;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardEntry;
@@ -84,18 +86,32 @@ public final class ParkourLeaderboardHologramService {
         }
     }
 
+    /**
+     * Register a {@code PlayerDisconnectEvent} listener so a player who leaves while viewing
+     * the leaderboard is removed from {@link #viewers}. Without this the UUID would linger
+     * forever — small per-player, but unbounded over the server's uptime.
+     */
+    public void register(GlobalEventHandler events) {
+        events.addListener(PlayerDisconnectEvent.class, event -> {
+            UUID uuid = event.getPlayer().getUuid();
+            // Don't call hideFrom() — the player connection is already gone, sending packets
+            // would error. Just drop them from the viewer set.
+            viewers.remove(uuid);
+        });
+    }
+
     private TextHologram createTitleHologram() {
         return new TextHologramBuilder(offsetOnBoard(TITLE_CENTER_OFFSET, 0.0))
                 .spacing(ROW_SPACING)
-                .line(Text.c("&6&lПАРКУР"), titleStyle())
-                .line(Text.c("&7Лидеры по очкам и времени"), subtitleStyle())
+                .line(Text.c("<#AE3AF3><bold>ПАРКУР"), titleStyle())
+                .line(Text.c("<gray>Лидеры по очкам и времени"), subtitleStyle())
                 .build();
     }
 
     private TextHologram createRankColumn() {
         TextHologramBuilder builder = new TextHologramBuilder(offsetOnBoard(RANK_COLUMN_OFFSET, COLUMN_HEADER_OFFSET))
                 .spacing(ROW_SPACING)
-                .line(Text.c("&8Место"), columnHeaderStyle(TextDisplayMeta.Alignment.RIGHT, RANK_HEADER_LINE_WIDTH));
+                .line(Text.c("<dark_gray>Место"), columnHeaderStyle(TextDisplayMeta.Alignment.RIGHT, RANK_HEADER_LINE_WIDTH));
 
         for (int rank = 1; rank <= LobbyConfig.Parkour.LEADERBOARD_MAX_ENTRIES; rank++) {
             builder.line(rankComponent(rank, null), rankRowStyle());
@@ -119,7 +135,7 @@ public final class ParkourLeaderboardHologramService {
     private TextHologram createScoreColumn() {
         TextHologramBuilder builder = new TextHologramBuilder(offsetOnBoard(SCORE_COLUMN_OFFSET, COLUMN_HEADER_OFFSET))
                 .spacing(ROW_SPACING)
-                .line(Text.c("&#FFB347Очки"), columnHeaderStyle(TextDisplayMeta.Alignment.RIGHT, SCORE_LINE_WIDTH));
+                .line(Text.c("<#C58AF0>Очки"), columnHeaderStyle(TextDisplayMeta.Alignment.RIGHT, SCORE_LINE_WIDTH));
 
         for (int rank = 1; rank <= LobbyConfig.Parkour.LEADERBOARD_MAX_ENTRIES; rank++) {
             builder.line(scoreComponent(rank, null), scoreRowStyle());
@@ -131,7 +147,7 @@ public final class ParkourLeaderboardHologramService {
     private TextHologram createTimeColumn() {
         TextHologramBuilder builder = new TextHologramBuilder(offsetOnBoard(TIME_COLUMN_OFFSET, COLUMN_HEADER_OFFSET))
                 .spacing(ROW_SPACING)
-                .line(Text.c("&#7DE3FFВремя"), columnHeaderStyle(TextDisplayMeta.Alignment.RIGHT, TIME_LINE_WIDTH));
+                .line(Text.c("<#7DE3FF>Время"), columnHeaderStyle(TextDisplayMeta.Alignment.RIGHT, TIME_LINE_WIDTH));
 
         for (int rank = 1; rank <= LobbyConfig.Parkour.LEADERBOARD_MAX_ENTRIES; rank++) {
             builder.line(timeComponent(rank, null), timeRowStyle());
@@ -178,17 +194,17 @@ public final class ParkourLeaderboardHologramService {
     }
 
     private Component rankComponent(int rank, ParkourLeaderboardEntry entry) {
-        String color = entry == null ? "&8" : rowColor(rank);
+        String color = entry == null ? "<dark_gray>" : rowColor(rank);
         return Text.c(color + String.format("%2d.", rank));
     }
 
     private Component nameHeaderComponent() {
-        return Text.c("&7" + MinecraftFontMetrics.padStartToWidth("Игрок", NAME_COLUMN_WIDTH));
+        return Text.c("<gray>" + MinecraftFontMetrics.padStartToWidth("Игрок", NAME_COLUMN_WIDTH));
     }
 
     private Component nameComponent(int rank, ParkourLeaderboardEntry entry) {
         if (entry == null) {
-            return Text.c("&8" + MinecraftFontMetrics.padStartToWidth("---", NAME_COLUMN_WIDTH));
+            return Text.c("<dark_gray>" + MinecraftFontMetrics.padStartToWidth("---", NAME_COLUMN_WIDTH));
         }
 
         String trimmedName = MinecraftFontMetrics.trimToWidth(entry.playerName(), NAME_COLUMN_WIDTH, "...");
@@ -198,7 +214,7 @@ public final class ParkourLeaderboardHologramService {
 
     private Component scoreComponent(int rank, ParkourLeaderboardEntry entry) {
         if (entry == null) {
-            return Text.c("&8" + String.format("%4s", "--"));
+            return Text.c("<dark_gray>" + String.format("%4s", "--"));
         }
 
         return Text.raw(rowColor(rank) + String.format("%4d", entry.score()));   // dynamic per score
@@ -206,7 +222,7 @@ public final class ParkourLeaderboardHologramService {
 
     private Component timeComponent(int rank, ParkourLeaderboardEntry entry) {
         if (entry == null) {
-            return Text.c("&8--:--.--");
+            return Text.c("<dark_gray>--:--.--");
         }
 
         return Text.raw(rowColor(rank) + ParkourTimeFormatter.leaderboard(entry.durationMillis()));   // dynamic per time
@@ -214,17 +230,17 @@ public final class ParkourLeaderboardHologramService {
 
     private String rowColor(int rank) {
         return switch (rank) {
-            case 1 -> "&#F7C948";
-            case 2 -> "&#D7E1EC";
-            case 3 -> "&#C98855";
-            case 4 -> "&#90E07A";
-            case 5 -> "&#7DE3FF";
-            case 6 -> "&#B39DFF";
-            case 7 -> "&#FF9EC4";
-            case 8 -> "&#FFB347";
-            case 9 -> "&#78E6C7";
-            case 10 -> "&#D3D8E2";
-            default -> "&7";
+            case 1 -> "<#985DBC>";
+            case 2 -> "<#D7E1EC>";
+            case 3 -> "<#C98855>";
+            case 4 -> "<#90E07A>";
+            case 5 -> "<#7DE3FF>";
+            case 6 -> "<#B39DFF>";
+            case 7 -> "<#FF9EC4>";
+            case 8 -> "<#C58AF0>";
+            case 9 -> "<#78E6C7>";
+            case 10 -> "<#D3D8E2>";
+            default -> "<gray>";
         };
     }
 

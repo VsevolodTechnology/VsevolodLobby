@@ -3,12 +3,12 @@ package ua.vsevolod.lobby.config;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
+import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.GameMode;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.tag.Tag;
 import ua.vsevolod.lobby.bootstrap.module.InstanceModule;
-import ua.vsevolod.lobby.util.Text;
 
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -21,18 +21,34 @@ public final class LobbyConfig {
     }
 
     public static final class Project {
-        public static final String NAME = "OVERDYN";
+        public static final String NAME = "Orjus";
+
+        /** Brand name in the project's small-caps font. */
+        public static final String BRAND = "ᴏʀᴊᴜꜱ";
+        /** Full studio name in the small-caps font. */
+        public static final String BRAND_FULL = "ᴏʀᴊᴜꜱ-ꜱᴛᴜᴅɪᴏ";
+        /** Brand gradient (MiniMessage) — the project's signature purple. */
+        public static final String BRAND_GRADIENT = "<gradient:#AE3AF3:#985DBC>";
 
         public static final SocialLinks SOCIAL_LINKS = new SocialLinks(
-                "t.me/OverdynMC", "dsc.gg/Overdyn", "vk.com/overdyn", "overdyn.xyz"
+                "t.me/OrjusTg", "discord.com/invite/BNCXWbHRsC", "", "studio.orjus.ru"
         );
 
-        public static final String SERVER_IP = "play.overdyn.xyz";
-        public static final String WEBSITE = "overdyn.xyz";
-        public static final String DISCORD = "discord.gg/overdyn";
+        public static final String SERVER_IP = "play.orjus.ru";
+        public static final String WEBSITE = "studio.orjus.ru";
+        public static final String DISCORD = "discord.com/invite/BNCXWbHRsC";
 
-        public static final String WHITE_COLOR_ORIGINAL = "&#FFF2E0";
+        /**
+         * Project's official "white" — the warm cream {@code #FFF2E0}, never pure white.
+         * Use this everywhere a "white" text colour is needed (items, holograms, sidebars,
+         * kick screens, chat). It is a MiniMessage tag, ready to drop into any string.
+         */
+        public static final String WHITE_COLOR_ORIGINAL = "<#FFF2E0>";
         public static final TextColor WHITE_COLOR_TEXT_ORIGINAL = TextColor.color(0xFFF2E0);
+
+        /** Project signature orange (MiniMessage tag) — paired with white everywhere. */
+        public static final String ORANGE_COLOR_ORIGINAL = "<#AE3AF3>";
+        public static final TextColor ORANGE_COLOR_TEXT_ORIGINAL = TextColor.color(0xAE3AF3);
 
         public record SocialLinks(
                 String telegram,
@@ -197,19 +213,7 @@ public final class LobbyConfig {
     }
 
     public static final class Messages {
-        public static final List<String> WELCOME_MSG = List.of(
-                "",
-                " &#EA1B40&lʜᴏᴛᴡᴏʀʟᴅ &8» &#FFF2E0Добро пожаловать, &#FFE259{player}&#FFF2E0!",
-                " &#FFF2E0Рады видеть тебя на нашем проекте.",
-                "",
-                " &6&l| &#FFF2E0Основное меню: &e/menu",
-                " &6&l| &#FFF2E0Выбор режима: &6Компас &7(в руке)",
-                " &6&l| &#FFF2E0Наш магазин: &#FFE259www.hotworld.su",
-                "",
-                " &e▶ &#FFF2E0Используй &eдвойной прыжок&#FFF2E0, чтобы перемещаться быстрее!",
-                ""
-        );
-        public static final String SHUTTING_DOWN_MSG = "§cServer is shutting down...";
+        public static final String SHUTTING_DOWN_MSG = "<red>Server is shutting down...";
         public static final String SHUTTING_DOWN_KICKING_MSG = "Stopping server...";
 
         private Messages() {
@@ -218,16 +222,9 @@ public final class LobbyConfig {
 
         public static Component buildVersionWarning(int secondsLeft) {
             return Component.text()
-                    .append(Component.text("⚠ Рекомендуем использовать новейшую версию 1.21.11 ", TextColor.color(0xE36666)))
+                    .append(Component.text("⚠ Рекомендуем использовать новейшую версию " + MinecraftServer.VERSION_NAME + " ", TextColor.color(0xE36666)))
                     .append(Component.text("[" + secondsLeft + " сек]", NamedTextColor.GRAY))
                     .build();
-        }
-
-        public static Component welcome(String playerName) {
-            String joined = String.join("\n", WELCOME_MSG)
-                    .replace("{player}", playerName);
-
-            return Text.c(joined);
         }
     }
 
@@ -342,10 +339,10 @@ public final class LobbyConfig {
 
     public static final class Animation {
         public static final List<String> TITLE = List.of(
-                "&#FFB300&lO&#FFBE1A&lV&#FFC933&lE&#FFD44D&lR&#FFDF66&lD&#FFEA80&lY&#FFF599&lN",
-                "&#FFE066&lO&#FFD94D&lV&#FFD233&lE&#FFCB1A&lR&#FFC400&lD&#FFB000&lY&#FF9C00&lN",
-                "&#F7C948&lO&#F5B73D&lV&#F3A533&lE&#F19228&lR&#EF801E&lD&#ED6D13&lY&#EB5B09&lN",
-                "&#FF9700&lO&#FFA31A&lV&#FFAF33&lE&#FFBB4D&lR&#FFC766&lD&#FFD380&lY&#FFDF99&lN"
+                "<gradient:#985DBC:#C58AF0><bold>OVERDYN</bold></gradient>",
+                "<gradient:#C58AF0:#985DBC><bold>OVERDYN</bold></gradient>",
+                "<gradient:#985DBC:#EB5B09><bold>OVERDYN</bold></gradient>",
+                "<gradient:#AE3AF3:#C58AF0><bold>OVERDYN</bold></gradient>"
         );
 
         private Animation() {

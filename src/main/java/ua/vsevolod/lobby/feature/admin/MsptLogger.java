@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.LongAdder;
  */
 public final class MsptLogger {
 
-    private static final Path LOG_FILE = Paths.get("logs", "mspt.log");
+    private static final Path LOG_FILE = Paths.get("storage", "logs", "mspt.log");
     private static final Duration FLUSH_INTERVAL = Duration.ofSeconds(60);
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -56,10 +56,15 @@ public final class MsptLogger {
             do { oldMax = maxNs.get(); } while (ns > oldMax && !maxNs.compareAndSet(oldMax, ns));
         });
 
-        MinecraftServer.getSchedulerManager()
-                .buildTask(() -> Thread.startVirtualThread(this::flush))
-                .repeat(FLUSH_INTERVAL)
-                .schedule();
+        // Off-tick: the periodic flush only spawns a virtual thread to write — no reason to
+        // bounce through the tick scheduler. Uses BackgroundScheduler so the tick loop stays
+        // ignorant of this timer entirely.
+        ua.vsevolod.lobby.util.BackgroundScheduler.SHARED.scheduleWithFixedDelay(
+                () -> Thread.startVirtualThread(this::flush),
+                FLUSH_INTERVAL.toMillis(),
+                FLUSH_INTERVAL.toMillis(),
+                java.util.concurrent.TimeUnit.MILLISECONDS
+        );
     }
 
     private void flush() {

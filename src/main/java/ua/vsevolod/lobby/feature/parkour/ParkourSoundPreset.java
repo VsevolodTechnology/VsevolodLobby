@@ -8,7 +8,7 @@ import net.minestom.server.sound.SoundEvent;
 public enum ParkourSoundPreset {
 
     OFF("Выключены", "Без звуков паркура.", TextColor.color(0xE05555), Material.BARRIER),
-    STANDARD("Стандартные", "Классические звуки.", TextColor.color(0xF1BB58), Material.NOTE_BLOCK),
+    STANDARD("Стандартные", "Классические звуки.", TextColor.color(0xAE3AF3), Material.NOTE_BLOCK),
     SOFT("Мягкие", "Тихие, спокойные.", TextColor.color(0x87CEEB), Material.AMETHYST_SHARD),
     RETRO("Ретро", "Звуки нот-блоков.", TextColor.color(0x8EB126), Material.JUKEBOX);
 

@@ -1,6 +1,7 @@
 package ua.vsevolod.lobby.feature.lobby.interaction.parkour;
 
 import net.minestom.server.MinecraftServer;
+import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.Event;
 import net.minestom.server.event.EventNode;
@@ -30,6 +31,10 @@ public final class LobbyParkourService {
     private final ParkourService parkourService;
     private final ParkourSettingsMenu settingsMenu;
 
+    /** Where each player stood before starting parkour — to put them back, not at spawn. */
+    private final java.util.Map<java.util.UUID, Pos> preParkourPos =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public LobbyParkourService(
             Instance lobbyInstance,
             LobbyJoinInitializer joinInitializer,
@@ -50,8 +55,10 @@ public final class LobbyParkourService {
         settingsMenu.register(parkourNode);
         events.addChild(parkourNode);
 
-        events.addListener(PlayerDisconnectEvent.class, event ->
-                settingsMenu.evict(event.getPlayer().getUuid()));
+        events.addListener(PlayerDisconnectEvent.class, event -> {
+            settingsMenu.evict(event.getPlayer().getUuid());
+            preParkourPos.remove(event.getPlayer().getUuid());
+        });
 
         MinecraftServer.getCommandManager().register(new ParkourCommand(this::toggle));
     }
@@ -78,6 +85,9 @@ public final class LobbyParkourService {
             return;
         }
 
+        // Remember where the player stood so parkour can return them here, not to spawn.
+        preParkourPos.put(player.getUuid(), player.getPosition());
+
         ParkourDifficulty difficulty = settingsMenu.getDifficulty(player.getUuid());
         ParkourTheme theme = settingsMenu.getTheme(player.getUuid());
         RegistryKey<DimensionType> dimension = settingsMenu.getDimension(player.getUuid());
@@ -94,14 +104,17 @@ public final class LobbyParkourService {
         player.removeEffect(PotionEffect.NIGHT_VISION);
         player.closeInventory();
 
+        // Return to the pre-parkour spot if we have it, otherwise the lobby spawn.
+        Pos back = preParkourPos.remove(player.getUuid());
+        Pos target = back != null ? back : LobbyConfig.Locations.SPAWN_POS_PLAYER;
+
         if (player.getInstance() == lobbyInstance) {
             joinInitializer.restore(player);
+            player.teleport(target);
             return;
         }
 
-        player.setInstance(lobbyInstance, LobbyConfig.Locations.SPAWN_POS_PLAYER)
-                .thenRun(() -> {
-                    joinInitializer.restore(player);
-                });
+        player.setInstance(lobbyInstance, target)
+                .thenRun(() -> joinInitializer.restore(player));
     }
 }

@@ -1,38 +1,32 @@
 package ua.vsevolod.lobby.command.admin;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextColor;
 import net.minestom.server.MinecraftServer;
-import net.minestom.server.command.ConsoleSender;
-import net.minestom.server.command.builder.Command;
-import net.minestom.server.entity.Player;
+import ua.vsevolod.lobby.bootstrap.LobbyShutdown;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.util.ServerLogger;
 
 import java.time.Duration;
 
-public class StopCommand extends Command {
+public class StopCommand extends AdminCommand {
+
+    private static final Component KICK_MESSAGE = Component.text(
+            "Сервер остановлен.", TextColor.color(0xE36666));
 
     public StopCommand() {
-        super("stop");
-
-        setCondition((sender, commandString) -> (sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())));
+        super("stop", true, "end");   // allowsConsole=true — server console runs this on shutdown
 
         setDefaultExecutor((sender, context) -> {
-
-            if (!(sender instanceof ConsoleSender || (sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())))) {
-                return;
-            }
-
-            System.out.println("[SERVER] Stopping server...");
+            ServerLogger.get().info("Server stopping...");
             LobbyConfig.Settings.SHUTTING_DOWN = true;
-            MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(e -> e.kick(LobbyConfig.Messages.SHUTTING_DOWN_KICKING_MSG));
+            MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(e -> e.kick(KICK_MESSAGE));
             MinecraftServer.getSchedulerManager().buildTask(() -> {
+                LobbyShutdown.flushAllPersistence();
                 MinecraftServer.stopCleanly();
-
-                System.out.println("[SERVER] Shutdown complete.");
+                ServerLogger.get().info("Shutdown complete.");
                 System.exit(0);
             }).delay(Duration.ofMillis(300)).schedule();
         });
-
-
-        MinecraftServer.getCommandManager().register(this);
     }
 }

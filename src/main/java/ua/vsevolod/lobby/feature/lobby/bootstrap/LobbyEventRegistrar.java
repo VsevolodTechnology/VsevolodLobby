@@ -27,6 +27,8 @@ import ua.vsevolod.lobby.feature.lobby.player.join.LobbyItemService;
 import ua.vsevolod.lobby.feature.lobby.player.join.LobbyJoinInitializer;
 import ua.vsevolod.lobby.feature.lobby.player.join.LobbyJoinListener;
 import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemUseListener;
+import ua.vsevolod.lobby.feature.lobby.player.join.cutscene.CutsceneService;
+import ua.vsevolod.lobby.feature.lobby.player.join.welcome.WelcomeAnimationService;
 import ua.vsevolod.lobby.feature.lobby.player.login.LobbyPlayerLoginListener;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.FilePlayerDataStore;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.MongoPlayerDataStore;
@@ -35,7 +37,6 @@ import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
 import ua.vsevolod.lobby.feature.lobby.player.protocol.LobbyProtocolWarningService;
 import ua.vsevolod.lobby.feature.lobby.player.visibility.PlayerHider;
 import ua.vsevolod.lobby.feature.lobby.player.workaround.MinestomTagsWorkaround;
-import ua.vsevolod.lobby.feature.lobby.ui.hologram.LobbyWelcomeHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.hologram.ParkourLeaderboardHologramService;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.LobbyModeSelectorMenu;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.LobbySettingsMenu;
@@ -44,8 +45,10 @@ import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarToggle;
 import ua.vsevolod.lobby.feature.lobby.world.movement.LaunchPadManager;
 import ua.vsevolod.lobby.feature.lobby.world.protection.LobbyBlockProtectionListener;
 import ua.vsevolod.lobby.feature.lobby.world.protection.VoidProtectionListener;
+import ua.vsevolod.lobby.config.StorageConfig;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardService;
 import ua.vsevolod.lobby.feature.parkour.leaderboard.ParkourLeaderboardStoreFactory;
+import ua.vsevolod.lobby.util.ServerLogger;
 
 import java.util.List;
 
@@ -70,14 +73,18 @@ public final class LobbyEventRegistrar {
         this.musicManager.startGlobalAmbientSuppressor();
         this.launchPadManager = new LaunchPadManager();
         this.preferencesService = createPreferencesService();
+        ua.vsevolod.lobby.bootstrap.LobbyShutdown.register(preferencesService::flushAll);
         this.sidebarToggle = new SidebarToggle(sidebar);
         this.playerHider = new PlayerHider();
         sidebarToggle.setPreferencesService(preferencesService);
         playerHider.setPreferencesService(preferencesService);
 
         // Preload preferences as early as possible — before any PlayerSpawnEvent handlers run.
-        events.addListener(AsyncPlayerPreLoginEvent.class, event ->
-                preferencesService.preload(event.getGameProfile().uuid()));
+        events.addListener(AsyncPlayerPreLoginEvent.class, event -> {
+            var profile = event.getGameProfile();
+            preferencesService.preload(profile.uuid());
+            ServerLogger.get().playerConnect(profile.name(), extractProtocol(event));
+        });
 
         // Apply preferences before LobbyJoinListener so giveJoinItems uses correct music/sidebar state.
         // Only for lobby joins — NOT parkour dimension changes which also fire PlayerSpawnEvent.
@@ -95,21 +102,23 @@ public final class LobbyEventRegistrar {
     }
 
     private static PlayerPreferencesService createPreferencesService() {
+        StorageConfig cfg = StorageConfig.get();
         PlayerDataStore store;
-        try {
-            MongoPlayerDataStore mongo = new MongoPlayerDataStore(
-                    LobbyConfig.Parkour.Mongo.URI,
-                    LobbyConfig.Parkour.Mongo.DATABASE
-            );
-            // Quick connectivity test — will timeout in 3 seconds max if MongoDB is down.
-            mongo.load(new java.util.UUID(0, 0));
-            Runtime.getRuntime().addShutdownHook(new Thread(mongo::close, "player-prefs-mongo-close"));
-            store = mongo;
-            System.out.println("[PlayerPrefs] Using MongoDB storage at " + LobbyConfig.Parkour.Mongo.URI);
-        } catch (Exception e) {
-            System.out.println("[PlayerPrefs] MongoDB unavailable (" + e.getMessage()
-                    + "), using file storage (storage/player_data/).");
+        if (cfg.playerPrefs == StorageConfig.Mode.MONGODB) {
+            try {
+                MongoPlayerDataStore mongo = new MongoPlayerDataStore(
+                        cfg.mongoUri, cfg.mongoDatabase);
+                mongo.load(new java.util.UUID(0, 0));
+                Runtime.getRuntime().addShutdownHook(new Thread(mongo::close, "player-prefs-mongo-close"));
+                store = mongo;
+                ServerLogger.get().info("Player preferences storage: MongoDB (" + cfg.mongoUri + ")");
+            } catch (Exception e) {
+                ServerLogger.get().warn("Player preferences MongoDB unavailable, using file storage");
+                store = new FilePlayerDataStore();
+            }
+        } else {
             store = new FilePlayerDataStore();
+            ServerLogger.get().detail("Player preferences storage: file");
         }
         return new PlayerPreferencesService(store);
     }
@@ -122,8 +131,7 @@ public final class LobbyEventRegistrar {
             LobbySidebar sidebar,
             LobbyModeSelectorMenu lobbyMenu
     ) {
-        this.protocolWarningService = new LobbyProtocolWarningService();
-        LobbyWelcomeHologramService hologramService = new LobbyWelcomeHologramService();
+        this.protocolWarningService = new LobbyProtocolWarningService(preferencesService);
         ParkourLeaderboardService parkourLeaderboardService = new ParkourLeaderboardService(
                 ParkourLeaderboardStoreFactory.create()
         );
@@ -131,19 +139,25 @@ public final class LobbyEventRegistrar {
 
         ParkourLeaderboardHologramService parkourLeaderboardHologramService =
                 new ParkourLeaderboardHologramService(parkourLeaderboardService);
+        parkourLeaderboardHologramService.register(events);
 
         LobbyItemService itemService = new LobbyItemService();
         LobbyNpcService npcService = new LobbyNpcService(npcManager);
+        WelcomeAnimationService welcomeAnimationService = new WelcomeAnimationService();
+        CutsceneService cutsceneService = new CutsceneService(musicManager);
+        cutsceneService.register(events);
+        new ua.vsevolod.lobby.command.admin.CutsceneCommand(cutsceneService);
         LobbyJoinInitializer joinInitializer = new LobbyJoinInitializer(
                 musicManager,
                 sidebar,
                 sidebarToggle,
                 protocolWarningService,
-                hologramService,
                 parkourLeaderboardHologramService,
                 itemService,
                 npcService,
-                preferencesService
+                preferencesService,
+                welcomeAnimationService,
+                cutsceneService
         );
         LobbyMusicSelectorMenu musicSelectorMenu = new LobbyMusicSelectorMenu(musicManager);
         LobbyParkourService parkourService =
@@ -154,7 +168,7 @@ public final class LobbyEventRegistrar {
         npcActionExecutor.registerPrefix("parkour", (player, ignored) -> parkourService.startFromNpc(player));
 
         LobbySettingsMenu settingsMenu = new LobbySettingsMenu(
-                preferencesService, musicManager, sidebarToggle, musicSelectorMenu);
+                preferencesService, musicManager, sidebarToggle, musicSelectorMenu, protocolWarningService);
 
         List<LobbyEventRegistration> listeners = List.of(
                 new MinestomTagsWorkaround(),
@@ -180,6 +194,7 @@ public final class LobbyEventRegistrar {
 
         events.addListener(PlayerDisconnectEvent.class, event -> {
             var player = event.getPlayer();
+            ServerLogger.get().playerDisconnect(player.getUsername());
             if (player.getInstance() == InstanceModule.lobby) {
                 var prefs = preferencesService.get(player.getUuid());
                 if (prefs.positionSaveEnabled()) {
@@ -187,9 +202,29 @@ public final class LobbyEventRegistrar {
                 }
             }
             joinInitializer.leave(player, true);
-
         });
         parkourService.register(events);
+    }
+
+    /**
+     * Reads the client protocol from a Velocity-forwarded GameProfile property if present;
+     * otherwise falls back to the value pulled off the raw {@link AsyncPlayerPreLoginEvent}
+     * connection so direct (non-Velocity) joins still log a usable number.
+     */
+    private static int extractProtocol(AsyncPlayerPreLoginEvent event) {
+        for (var property : event.getGameProfile().properties()) {
+            if (!property.name().equals(LobbyConfig.Settings.IDENTIFIER_VELOCITY_MESSAGE)) continue;
+            try {
+                int v = Integer.parseInt(property.value());
+                if (v > 0) return v;
+            } catch (NumberFormatException ignored) {}
+        }
+        var conn = event.getConnection();
+        if (conn != null) {
+            int handshake = conn.getProtocolVersion();
+            if (handshake > 0) return handshake;
+        }
+        return 0;
     }
 
     private void registerMovement(GlobalEventHandler events) {

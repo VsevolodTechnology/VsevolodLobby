@@ -8,12 +8,10 @@ import net.minestom.server.instance.Instance;
 import net.minestom.server.scoreboard.Team;
 import net.minestom.server.scoreboard.TeamBuilder;
 import net.minestom.server.scoreboard.TeamManager;
-import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcDefinition;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcsConfig;
 import ua.vsevolod.lobby.util.Text;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,7 +32,7 @@ public final class NpcManager {
     private final Map<net.minestom.server.entity.Entity, String> entityToId = new java.util.IdentityHashMap<>();
     /** Index of the last applied config by id. Avoids the O(N) list-scan in {@link #findById}. */
     private Map<String, NpcDefinition> lastAppliedById = Map.of();
-    private NpcsConfig lastApplied = new NpcsConfig(List.of());
+    private NpcsConfig lastApplied = emptyNpcs();
 
     public NpcManager(Instance instance) {
         this.instance = instance;
@@ -42,7 +40,7 @@ public final class NpcManager {
 
     public synchronized void onConfigApplied(NpcsConfig config) {
         Map<String, NpcDefinition> incoming = new LinkedHashMap<>();
-        for (NpcDefinition def : config.npcs()) incoming.put(def.id(), def);
+        for (NpcDefinition def : config.npcs) incoming.put(def.id(), def);
 
         // Despawn anything that disappeared, became invisible, or whose visual identity changed.
         for (Map.Entry<String, LobbyNpc> entry : new ArrayList<>(live.entrySet())) {
@@ -61,7 +59,7 @@ public final class NpcManager {
 
         // Spawn anything new or freshly-visible.
         List<LobbyNpc> newlySpawned = new ArrayList<>();
-        for (NpcDefinition def : config.npcs()) {
+        for (NpcDefinition def : config.npcs) {
             if (!def.visible()) continue;
             if (!live.containsKey(def.id())) {
                 LobbyNpc npc = spawn(def);
@@ -87,12 +85,21 @@ public final class NpcManager {
         lastApplied = config;
         // Rebuild the by-id index from the new config so subsequent findById is O(1).
         Map<String, NpcDefinition> rebuilt = new LinkedHashMap<>(incoming.size());
-        for (NpcDefinition def : config.npcs()) rebuilt.put(def.id(), def);
+        for (NpcDefinition def : config.npcs) rebuilt.put(def.id(), def);
         lastAppliedById = rebuilt;
     }
 
     private LobbyNpc spawn(NpcDefinition def) {
         PlayerSkin syncSkin = NpcSkinResolver.resolveSync(def.skin());
+
+        net.minestom.server.entity.EntityType type = def.entityType() == null
+                ? net.minestom.server.entity.EntityType.MANNEQUIN
+                : net.minestom.server.entity.EntityType.fromKey(def.entityType());
+        if (type == null) {
+            System.err.println("[NpcManager] Unknown entity type '" + def.entityType()
+                    + "' for npc " + def.id() + " — using mannequin");
+            type = net.minestom.server.entity.EntityType.MANNEQUIN;
+        }
 
         LobbyNpc npc = new LobbyNpc(
                 instance,
@@ -100,7 +107,9 @@ public final class NpcManager {
                 def.name() == null ? null : Text.c(def.name()),
                 def.description() == null ? null : Text.c(def.description()),
                 def.glowing(),
-                syncSkin
+                syncSkin,
+                type,
+                def.scale()
         );
 
         // If the skin spec was a URL, resolveSync returned null and the resolver is now
@@ -219,15 +228,23 @@ public final class NpcManager {
 
     public synchronized List<String> allIds() {
         List<String> ids = new ArrayList<>();
-        for (NpcDefinition def : lastApplied.npcs()) ids.add(def.id());
+        for (NpcDefinition def : lastApplied.npcs) ids.add(def.id());
         return ids;
     }
 
     public synchronized List<NpcDefinition> all() {
-        return new ArrayList<>(lastApplied.npcs());
+        return new ArrayList<>(lastApplied.npcs);
     }
 
-    public synchronized void updateAndSave(List<NpcDefinition> newList) throws IOException {
-        NpcConfigSection.INSTANCE.saveAndApply(new NpcsConfig(newList));
+    public synchronized void updateAndSave(List<NpcDefinition> newList) {
+        NpcsConfig snapshot = emptyNpcs();
+        snapshot.npcs = List.copyOf(newList);
+        NpcsConfig.save(snapshot);
+    }
+
+    private static NpcsConfig emptyNpcs() {
+        NpcsConfig c = new NpcsConfig();
+        c.npcs = List.of();
+        return c;
     }
 }

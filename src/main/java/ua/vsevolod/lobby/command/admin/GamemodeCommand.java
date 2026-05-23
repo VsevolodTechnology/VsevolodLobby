@@ -8,6 +8,7 @@ import net.minestom.server.command.builder.suggestion.SuggestionEntry;
 import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Player;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.util.Messages;
 
 public class GamemodeCommand extends Command {
 
@@ -37,11 +38,10 @@ public class GamemodeCommand extends Command {
 
         addSyntax((sender, context) -> {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage(
-                        GamemodeHelper.error("Консоль не может изменить режим самой себе. Используй ")
-                                .append(GamemodeHelper.primary("/" + getName() + " <режим> <игрок>"))
-                                .append(GamemodeHelper.error("."))
-                );
+                sender.sendMessage(Messages.compose(
+                        Messages.errorText("Консоль не может изменить режим самой себе. Используй "),
+                        Messages.accent("/" + getName() + " <режим> <игрок>"),
+                        Messages.errorText(".")));
                 return;
             }
 
@@ -58,7 +58,7 @@ public class GamemodeCommand extends Command {
 
         addSyntax((sender, context) -> {
             if (!(sender instanceof Player player) || !GamemodeHelper.canUse(player)) {
-                sender.sendMessage(GamemodeHelper.error("Недостаточно полномочий."));
+                sender.sendMessage(Messages.error("Недостаточно полномочий."));
                 return;
             }
 
@@ -74,11 +74,10 @@ public class GamemodeCommand extends Command {
             Player target = MinecraftServer.getConnectionManager().getOnlinePlayerByUsername(targetName);
 
             if (target == null) {
-                sender.sendMessage(
-                        GamemodeHelper.error("Игрок ")
-                                .append(GamemodeHelper.primary(targetName))
-                                .append(GamemodeHelper.error(" не найден."))
-                );
+                sender.sendMessage(Messages.compose(
+                        Messages.errorText("Игрок "),
+                        Messages.accent(targetName),
+                        Messages.errorText(" не найден.")));
                 return;
             }
 

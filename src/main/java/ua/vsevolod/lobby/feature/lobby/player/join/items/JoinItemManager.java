@@ -24,13 +24,13 @@ public final class JoinItemManager {
     private JoinItemManager() {}
 
     public static void giveAll(Player player) {
-        JoinItemsConfig cfg = JoinItemsConfigSection.INSTANCE.current();
+        JoinItemsConfig cfg = JoinItemsConfig.get();
         if (cfg != lastConfig) {
             itemCache.clear();
             lastConfig = cfg;
         }
         boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
-        for (JoinItemDefinition def : cfg.items()) {
+        for (JoinItemDefinition def : cfg.items) {
             if (!matchesCondition(def.condition(), bypass)) continue;
             player.getInventory().setItemStack(def.slot(), cachedItem(def));
         }

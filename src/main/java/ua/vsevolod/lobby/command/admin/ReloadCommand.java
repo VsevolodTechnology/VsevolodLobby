@@ -1,36 +1,42 @@
 package ua.vsevolod.lobby.command.admin;
 
-import net.minestom.server.MinecraftServer;
-import net.minestom.server.command.builder.Command;
+import net.kyori.adventure.text.Component;
 import net.minestom.server.entity.Player;
-import ua.vsevolod.lobby.config.LobbyConfig;
-import ua.vsevolod.lobby.feature.admin.config.ConfigManager;
+import ua.vsevolod.lobby.config.ConfigReload;
+import ua.vsevolod.lobby.util.Messages;
 
-public class ReloadCommand extends Command {
+/**
+ * {@code /reload} — re-reads every ConfigLib-backed config from disk and fires their listeners
+ * (live UI re-renders for tab/sidebar/menus/npcs/holograms).
+ */
+public class ReloadCommand extends AdminCommand {
 
-    private final ConfigManager configManager;
-
-    public ReloadCommand(ConfigManager configManager) {
+    public ReloadCommand() {
         super("reload");
-        this.configManager = configManager;
-
-        setCondition((sender, commandString) ->
-                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
 
         setDefaultExecutor((sender, context) -> {
-            if (!(sender instanceof Player p) || !LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())) {
-                return;
-            }
-            ConfigManager.ReloadResult result = configManager.reloadAll();
+            if (!(sender instanceof Player p)) return;
+            ConfigReload.Result result = ConfigReload.reloadAll();
             if (result.allOk()) {
-                p.sendMessage("§aПерезагружено секций: §f" + result.loaded());
+                p.sendMessage(Messages.compose(
+                        Messages.successText("Перезагружено конфигов: "),
+                        Messages.accent(String.valueOf(result.loaded()))));
             } else {
-                p.sendMessage("§eПерезагружено: §f" + result.loaded()
-                        + "§7, ошибки в: §c" + String.join("§7, §c", result.failed()));
-                p.sendMessage("§7Подробности в консоли. Старые значения сохранены для упавших секций.");
+                Component failedList = Component.empty();
+                boolean first = true;
+                for (String name : result.failed()) {
+                    if (!first) failedList = failedList.append(Messages.muted(", "));
+                    failedList = failedList.append(Messages.errorText(name));
+                    first = false;
+                }
+                p.sendMessage(Messages.compose(
+                        Messages.warningText("Перезагружено: "),
+                        Messages.accent(String.valueOf(result.loaded())),
+                        Messages.muted(", ошибки в: "),
+                        failedList));
+                p.sendMessage(Messages.muted(
+                        "Подробности в консоли. Старые значения сохранены для упавших конфигов."));
             }
         });
-
-        MinecraftServer.getCommandManager().register(this);
     }
 }

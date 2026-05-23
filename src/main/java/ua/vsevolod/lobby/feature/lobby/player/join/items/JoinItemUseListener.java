@@ -67,7 +67,7 @@ public final class JoinItemUseListener implements LobbyEventRegistration {
     }
 
     private Optional<JoinItemDefinition> findById(String id) {
-        for (JoinItemDefinition def : JoinItemsConfigSection.INSTANCE.current().items()) {
+        for (JoinItemDefinition def : JoinItemsConfig.get().items) {
             if (def.id().equals(id)) return Optional.of(def);
         }
         return Optional.empty();

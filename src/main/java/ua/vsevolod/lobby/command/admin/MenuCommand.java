@@ -1,31 +1,26 @@
 package ua.vsevolod.lobby.command.admin;
 
-import net.minestom.server.MinecraftServer;
-import net.minestom.server.command.builder.Command;
+import net.minestom.server.command.CommandSender;
 import net.minestom.server.command.builder.arguments.ArgumentLiteral;
 import net.minestom.server.command.builder.arguments.ArgumentString;
 import net.minestom.server.command.builder.arguments.ArgumentType;
 import net.minestom.server.command.builder.suggestion.SuggestionEntry;
 import net.minestom.server.entity.Player;
-import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.MenuManager;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenuDefinition;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfig;
-import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
+import ua.vsevolod.lobby.util.Messages;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public final class MenuCommand extends Command {
+public final class MenuCommand extends AdminCommand {
 
     private final MenuManager manager;
 
     public MenuCommand(MenuManager manager) {
         super("menu");
         this.manager = manager;
-
-        setCondition((sender, cmd) ->
-                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
 
         setDefaultExecutor((sender, ctx) -> usage(sender));
 
@@ -46,56 +41,70 @@ public final class MenuCommand extends Command {
         addSyntax((sender, ctx) -> openFor(sender, ctx.get(idArg)), openArg, idArg);
         addSyntax((sender, ctx) -> setVisibility(sender, ctx.get(idArg), ctx.get(visArg)),
                 setvisArg, idArg, visArg);
-
-        MinecraftServer.getCommandManager().register(this);
     }
 
-    private void usage(net.minestom.server.command.CommandSender sender) {
+    private void usage(CommandSender sender) {
         if (!(sender instanceof Player p)) return;
-        p.sendMessage("§6=== /menu ===");
-        p.sendMessage("§e/menu list");
-        p.sendMessage("§e/menu open <id>");
-        p.sendMessage("§e/menu setvisibility <id> <all|bypass-only>");
+        p.sendMessage(Messages.info("Команда /menu"));
+        p.sendMessage(Messages.compose(Messages.accent("/menu list")));
+        p.sendMessage(Messages.compose(Messages.accent("/menu open <id>")));
+        p.sendMessage(Messages.compose(Messages.accent("/menu setvisibility <id> <all|bypass-only>")));
     }
 
-    private void list(net.minestom.server.command.CommandSender sender) {
+    private void list(CommandSender sender) {
         if (!(sender instanceof Player p)) return;
-        MenusConfig cfg = MenusConfigSection.INSTANCE.current();
-        if (cfg.menus().isEmpty()) {
-            p.sendMessage("§7Меню не настроены.");
+        MenusConfig cfg = MenusConfig.get();
+        if (cfg.menus.isEmpty()) {
+            p.sendMessage(Messages.warning("Меню не настроены."));
             return;
         }
-        p.sendMessage("§6=== Меню (" + cfg.menus().size() + ") ===");
-        for (MenuDefinition def : cfg.menus().values()) {
-            p.sendMessage(String.format("§e%s §7— %d строк, видимость §f%s§7, items: §f%d",
-                    def.id(), def.rows(), def.visibility().toYaml(), def.items().size()));
+        p.sendMessage(Messages.compose(
+                Messages.text("Меню: "),
+                Messages.accent(String.valueOf(cfg.menus.size()))));
+        for (MenuDefinition def : cfg.menus.values()) {
+            p.sendMessage(Messages.compose(
+                    Messages.accent(def.id()),
+                    Messages.muted(" — " + def.rows() + " строк, видимость "),
+                    Messages.text(def.visibility().toYaml()),
+                    Messages.muted(", items: "),
+                    Messages.text(String.valueOf(def.items().size()))));
         }
     }
 
-    private void openFor(net.minestom.server.command.CommandSender sender, String id) {
+    private void openFor(CommandSender sender, String id) {
         if (!(sender instanceof Player p)) return;
         boolean ok = manager.openFor(p, id);
-        if (!ok) p.sendMessage("§cМеню '" + id + "' не найдено.");
+        if (!ok) p.sendMessage(Messages.compose(
+                Messages.errorText("Меню "),
+                Messages.accent("'" + id + "'"),
+                Messages.errorText(" не найдено.")));
     }
 
-    private void setVisibility(net.minestom.server.command.CommandSender sender, String id, String value) {
+    private void setVisibility(CommandSender sender, String id, String value) {
         if (!(sender instanceof Player p)) return;
-        MenusConfig cfg = MenusConfigSection.INSTANCE.current();
-        MenuDefinition def = cfg.menus().get(id);
+        MenusConfig cfg = MenusConfig.get();
+        MenuDefinition def = cfg.menus.get(id);
         if (def == null) {
-            p.sendMessage("§cМеню '" + id + "' не найдено.");
+            p.sendMessage(Messages.compose(
+                    Messages.errorText("Меню "),
+                    Messages.accent("'" + id + "'"),
+                    Messages.errorText(" не найдено.")));
             return;
         }
         MenuDefinition.Visibility newVis = MenuDefinition.Visibility.fromString(value);
         MenuDefinition updated = def.withVisibility(newVis);
 
-        Map<String, MenuDefinition> next = new LinkedHashMap<>(cfg.menus());
+        Map<String, MenuDefinition> next = new LinkedHashMap<>(cfg.menus);
         next.put(id, updated);
         try {
-            MenusConfigSection.INSTANCE.saveAndApply(new MenusConfig(next));
-            p.sendMessage("§a" + id + " visibility = §f" + newVis.toYaml());
+            cfg.menus = next;
+            MenusConfig.save(cfg);
+            p.sendMessage(Messages.compose(
+                    Messages.accent(id),
+                    Messages.successText(" видимость = "),
+                    Messages.accent(newVis.toYaml())));
         } catch (Exception e) {
-            p.sendMessage("§cОшибка сохранения: " + e.getMessage());
+            p.sendMessage(Messages.error("Ошибка сохранения: " + e.getMessage()));
             e.printStackTrace();
         }
     }

@@ -13,11 +13,14 @@ import net.minestom.server.inventory.InventoryType;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.tag.Tag;
+import net.minestom.server.timer.TaskSchedule;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.config.server.ServerInfo;
+import ua.vsevolod.lobby.config.server.ServerRegistry;
 import ua.vsevolod.lobby.feature.lobby.interaction.npc.NpcActionExecutor;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenuDefinition;
+import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfig;
 import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenuItem;
-import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
 import ua.vsevolod.lobby.util.Text;
 
 import java.util.ArrayList;
@@ -30,6 +33,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * Builds and opens config-driven chest menus. Items are keyed by name, and
  * each item can occupy multiple slots (for decoration panes). Left/right click
  * commands are dispatched separately via {@link NpcActionExecutor#executeCommands}.
+ *
+ * <p>An item with {@code server-id} set is a <b>server item</b>: its icon, name and lore
+ * come from {@code servers.yml} via {@link ServerItemRenderer}, it is refreshed once a
+ * second while the menu is open (live online count / status), and clicking it routes
+ * through {@link ServerConnector}.</p>
  */
 public final class MenuManager {
 
@@ -46,6 +54,11 @@ public final class MenuManager {
     public void register(GlobalEventHandler events) {
         events.addListener(InventoryPreClickEvent.class, this::onClick);
         events.addListener(PlayerDisconnectEvent.class, e -> open.remove(e.getPlayer().getUuid()));
+        // Live refresh of server items (online count / status) while a menu is open.
+        MinecraftServer.getSchedulerManager()
+                .buildTask(this::refreshServerItems)
+                .repeat(TaskSchedule.seconds(1))
+                .schedule();
     }
 
     /**
@@ -53,12 +66,12 @@ public final class MenuManager {
      * Returns false if not found or player lacks access.
      */
     public boolean openFor(Player player, String id) {
-        MenuDefinition def = MenusConfigSection.INSTANCE.current().menus().get(id);
+        MenuDefinition def = MenusConfig.get().menus.get(id);
         if (def == null) return false;
 
         boolean bypass = LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
         if (def.visibility() == MenuDefinition.Visibility.BYPASS_ONLY && !bypass) {
-            player.sendMessage("§cУ тебя нет доступа к этому меню.");
+            player.sendMessage(Text.c("<#E36666>У тебя нет доступа к этому меню."));
             return false;
         }
 
@@ -73,37 +86,72 @@ public final class MenuManager {
         Inventory inventory = new Inventory(type, Text.raw(def.menuTitle()));
 
         for (Map.Entry<String, MenuItem> entry : def.items().entrySet()) {
-            String itemKey = entry.getKey();
-            MenuItem item  = entry.getValue();
-
-            Material material = Material.fromKey(item.material());
-            if (material == null) material = Material.BARRIER;
-
-            ItemStack.Builder builder = ItemStack.builder(material)
-                    .set(MENU_ITEM_KEY, itemKey);
-
-            if (item.displayName() != null) {
-                builder.set(DataComponents.CUSTOM_NAME,
-                        Text.raw(substitute(item.displayName(), player))
-                                .decoration(TextDecoration.ITALIC, false));
-            }
-            if (!item.lore().isEmpty()) {
-                List<net.kyori.adventure.text.Component> loreLines = new ArrayList<>(item.lore().size());
-                for (String line : item.lore()) {
-                    loreLines.add(Text.raw(substitute(line, player))
-                            .decoration(TextDecoration.ITALIC, false));
-                }
-                builder.set(DataComponents.LORE, loreLines);
-            }
-            if (item.glint()) builder.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
-
-            ItemStack built = builder.hideExtraTooltip().build();
-
-            for (int slot : item.slots()) {
+            ItemStack built = renderItem(entry.getKey(), entry.getValue(), player);
+            for (int slot : entry.getValue().slots()) {
                 inventory.setItemStack(slot, built);
             }
         }
         return inventory;
+    }
+
+    /** Renders one menu item — a server item via {@link ServerItemRenderer}, else a plain item. */
+    private ItemStack renderItem(String itemKey, MenuItem item, Player player) {
+        if (item.isServerItem()) {
+            ServerInfo server = ServerRegistry.findById(item.serverId()).orElse(null);
+            if (server != null) {
+                return ItemStack.builder(server.material())
+                        .set(MENU_ITEM_KEY, itemKey)
+                        .set(DataComponents.CUSTOM_NAME, ServerItemRenderer.name(server))
+                        .set(DataComponents.LORE, ServerItemRenderer.lore(server))
+                        .hideExtraTooltip()
+                        .build();
+            }
+            // Unknown server id — fall through to the plain render so the slot isn't empty.
+        }
+
+        Material material = Material.fromKey(item.material());
+        if (material == null) material = Material.BARRIER;
+
+        ItemStack.Builder builder = ItemStack.builder(material)
+                .set(MENU_ITEM_KEY, itemKey);
+
+        if (item.displayName() != null) {
+            builder.set(DataComponents.CUSTOM_NAME,
+                    Text.raw(substitute(item.displayName(), player))
+                            .decoration(TextDecoration.ITALIC, false));
+        }
+        if (!item.lore().isEmpty()) {
+            List<net.kyori.adventure.text.Component> loreLines = new ArrayList<>(item.lore().size());
+            for (String line : item.lore()) {
+                loreLines.add(Text.raw(substitute(line, player))
+                        .decoration(TextDecoration.ITALIC, false));
+            }
+            builder.set(DataComponents.LORE, loreLines);
+        }
+        if (item.glint()) builder.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+
+        return builder.hideExtraTooltip().build();
+    }
+
+    /** Re-renders server items in every open menu so online count / status stay live. */
+    private void refreshServerItems() {
+        if (open.isEmpty()) return;
+        for (Map.Entry<UUID, Open> e : open.entrySet()) {
+            Open opened = e.getValue();
+            MenuDefinition def = MenusConfig.get().menus.get(opened.menuId());
+            if (def == null) continue;
+            Player player = MinecraftServer.getConnectionManager().getOnlinePlayerByUuid(e.getKey());
+            if (player == null) continue;
+
+            for (Map.Entry<String, MenuItem> itemEntry : def.items().entrySet()) {
+                MenuItem item = itemEntry.getValue();
+                if (!item.isServerItem()) continue;
+                ItemStack built = renderItem(itemEntry.getKey(), item, player);
+                for (int slot : item.slots()) {
+                    opened.inventory().setItemStack(slot, built);
+                }
+            }
+        }
     }
 
     private static InventoryType inventoryTypeFor(int rows) {
@@ -133,11 +181,18 @@ public final class MenuManager {
         String itemKey = event.getClickedItem().getTag(MENU_ITEM_KEY);
         if (itemKey == null) return;
 
-        MenuDefinition def = MenusConfigSection.INSTANCE.current().menus().get(opened.menuId());
+        MenuDefinition def = MenusConfig.get().menus.get(opened.menuId());
         if (def == null) return;
 
         MenuItem item = def.items().get(itemKey);
         if (item == null) return;
+
+        // Server item — clicking connects (status-gated), regardless of click side.
+        if (item.isServerItem()) {
+            ServerRegistry.findById(item.serverId())
+                    .ifPresent(server -> ServerConnector.connect(player, server));
+            return;
+        }
 
         // True left/right dispatch via Click sealed interface.
         Click click = event.getClick();
@@ -168,7 +223,7 @@ public final class MenuManager {
     }
 
     public List<String> menuIds() {
-        return new ArrayList<>(MenusConfigSection.INSTANCE.current().menus().keySet());
+        return new ArrayList<>(MenusConfig.get().menus.keySet());
     }
 
     private record Open(String menuId, Inventory inventory) {}

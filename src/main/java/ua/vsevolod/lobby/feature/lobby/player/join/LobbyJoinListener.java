@@ -17,25 +17,8 @@ public final class LobbyJoinListener implements LobbyEventRegistration {
         handler.addListener(PlayerSpawnEvent.class, event -> {
             if (event.isFirstSpawn()) {
                 initializer.initialize(event.getPlayer());
-//                attachCustomNametag(event.getPlayer());
             }
         });
     }
-//
-//    public static void attachCustomNametag(Player player) {
-//        Entity nametag = new Entity(EntityType.TEXT_DISPLAY);
-//        nametag.setInstance(player.getInstance(), player.getPosition());
-//        nametag.setNoGravity(true);
-//
-//        nametag.editEntityMeta(TextDisplayMeta.class, nametagmeta -> {
-//            nametagmeta.setText(Component.text(player.getUsername()));
-//            nametagmeta.setShadow(true);
-//            nametagmeta.setTranslation(new Pos(0, 0.30, 0));
-//            nametagmeta.setBackgroundColor(0xF1BB58);
-//            nametagmeta.setBillboardRenderConstraints(AbstractDisplayMeta.BillboardConstraints.CENTER);
-//        });
-//
-//        player.addPassenger(nametag);
-//    }
 }
 

@@ -1,10 +1,10 @@
 package ua.vsevolod.lobby.feature.parkour.leaderboard;
 
-import net.minestom.server.MinecraftServer;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.util.BackgroundScheduler;
 
-import java.time.Duration;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,24 +26,42 @@ public final class ParkourLeaderboardService {
     }
 
     public void startAutoRefresh() {
-        // store.loadEntries() blocks on file or MongoDB I/O; run it on a virtual thread so the
-        // tick scheduler doesn't stall waiting for network. The result is then handed back to
-        // the tick by replaceEntries() (synchronized — safe to call from any thread).
-        MinecraftServer.getSchedulerManager()
-                .buildTask(() -> Thread.startVirtualThread(this::refreshFromStore))
-                .repeat(Duration.ofMillis(LobbyConfig.Parkour.LEADERBOARD_SYNC_MILLIS))
-                .schedule();
+        // Off-tick scheduling: this only fires off a virtual thread, so there's no reason for
+        // the tick loop to host the timer. The actual loadEntries() runs on the virtual thread
+        // (file or MongoDB I/O), and replaceEntries() is synchronized — safe from any thread.
+        long periodMs = LobbyConfig.Parkour.LEADERBOARD_SYNC_MILLIS;
+        BackgroundScheduler.SHARED.scheduleWithFixedDelay(
+                () -> Thread.startVirtualThread(this::refreshFromStore),
+                periodMs, periodMs, TimeUnit.MILLISECONDS
+        );
     }
 
     public synchronized void submit(ParkourRunResult result) {
+        // The actual write (Mongo upsert / file lock + write) used to run on the tick thread —
+        // a finish() handler is invoked from PlayerMoveEvent, so any DB latency or another
+        // server holding the file lock would stall the world. Now the write is offloaded to a
+        // virtual thread; the local snapshot is updated immediately so the player still sees
+        // their entry instantly. Periodic auto-refresh reconciles any drift if the async write
+        // happens to fail.
         if (store instanceof ParkourLeaderboardSubmissionStore submissionStore) {
-            // Persist the upsert but DON'T pay for a full-collection re-read. We merge the new
-            // result into our existing snapshot in-memory; the periodic auto-refresh cycle
-            // reconciles any drift with the database. Audit CRIT-06.
-            submissionStore.submitResult(result);
             replaceEntries(merge(entries, result));
+            Thread.startVirtualThread(() -> {
+                try { submissionStore.submitResult(result); }
+                catch (Exception e) {
+                    System.err.println("[ParkourLeaderboard] async submit failed: " + e.getMessage());
+                }
+            });
         } else {
-            replaceEntries(store.updateEntries(currentEntries -> merge(currentEntries, result)));
+            // File backend: updateEntries blocks on FileLock — must be off the tick.
+            Thread.startVirtualThread(() -> {
+                try {
+                    List<ParkourLeaderboardEntry> updated = store.updateEntries(
+                            currentEntries -> merge(currentEntries, result));
+                    replaceEntries(updated);
+                } catch (Exception e) {
+                    System.err.println("[ParkourLeaderboard] async file update failed: " + e.getMessage());
+                }
+            });
         }
     }
 

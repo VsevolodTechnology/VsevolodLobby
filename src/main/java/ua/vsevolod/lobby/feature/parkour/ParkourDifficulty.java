@@ -2,34 +2,50 @@ package ua.vsevolod.lobby.feature.parkour;
 
 import net.kyori.adventure.text.format.TextColor;
 
+/**
+ * Difficulty preset shown in the parkour menu. The numeric jump tuning lives inside
+ * {@link ParkourGenerator}; this enum only carries UI metadata + the stats-eligibility flag.
+ */
 public enum ParkourDifficulty {
 
-    CHILL("Расслабленный", "Короткие прыжки по прямой.", TextColor.color(0x7EC8E3), 2, 0, 0),
-    NORMAL("Обычный", "Стандартные прыжки в 3 блока.", TextColor.color(0x8EB126), 3, 0, 1),
-    HARD("Сложный", "Прыжки с боковым смещением.", TextColor.color(0xF1BB58), 3, 1, 1),
-    EXTREME("Экстрим", "Дальние прыжки с отклонениями.", TextColor.color(0xE05555), 4, 1, 1);
+    NORMAL("Средний",
+            "Короткие прыжки с лёгкими спусками.",
+            "Статистика и лидерборд не учитываются.",
+            TextColor.color(0x8EB126), false),
+
+    HARD("Сложный",
+            "Подъёмы вверх, прыжки в сторону.",
+            "Статистика и лидерборд не учитываются.",
+            TextColor.color(0xAE3AF3), false),
+
+    EXTREME("Экстрим",
+            "Глубокие спуски, диагонали, частые повороты.",
+            "Статистика и лидерборд не учитываются.",
+            TextColor.color(0xE05555), false),
+
+    COMPETITIVE("Соревновательный",
+            "Все режимы вперемешку + дальние прыжки.",
+            "Идёт в статистику и лидерборд.",
+            TextColor.color(0xAE3AF3), true);
 
     private final String displayName;
     private final String description;
+    private final String statsNote;
     private final TextColor color;
-    private final int forwardDistance;
-    private final int maxSideOffset;
-    private final int maxHeightDelta;
+    private final boolean countsForStats;
 
-    ParkourDifficulty(String displayName, String description, TextColor color,
-                      int forwardDistance, int maxSideOffset, int maxHeightDelta) {
+    ParkourDifficulty(String displayName, String description, String statsNote, TextColor color,
+                      boolean countsForStats) {
         this.displayName = displayName;
         this.description = description;
+        this.statsNote = statsNote;
         this.color = color;
-        this.forwardDistance = forwardDistance;
-        this.maxSideOffset = maxSideOffset;
-        this.maxHeightDelta = maxHeightDelta;
+        this.countsForStats = countsForStats;
     }
 
-    public String displayName() { return displayName; }
-    public String description() { return description; }
-    public TextColor color() { return color; }
-    public int forwardDistance() { return forwardDistance; }
-    public int maxSideOffset() { return maxSideOffset; }
-    public int maxHeightDelta() { return maxHeightDelta; }
+    public String displayName()     { return displayName; }
+    public String description()     { return description; }
+    public String statsNote()       { return statsNote; }
+    public TextColor color()        { return color; }
+    public boolean countsForStats() { return countsForStats; }
 }

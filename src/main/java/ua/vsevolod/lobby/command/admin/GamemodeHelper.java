@@ -1,26 +1,16 @@
 package ua.vsevolod.lobby.command.admin;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.TextColor;
 import net.minestom.server.command.CommandSender;
 import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Player;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.util.Messages;
 
 import java.util.Locale;
 import java.util.Map;
 
 public final class GamemodeHelper {
-
-    private static final TextColor PRIMARY_COLOR = TextColor.color(0x59BDFF);
-    private static final TextColor PRIMARY_SOFT_COLOR = TextColor.color(0x7CC9FF);
-    private static final TextColor TEXT_COLOR = TextColor.color(0xC9D6E5);
-
-    private static final TextColor SUCCESS_COLOR = TextColor.color(0x81E366);
-    private static final TextColor SUCCESS_SOFT_COLOR = TextColor.color(0xA2F089);
-
-    private static final TextColor WARNING_COLOR = TextColor.color(0xE3CA66);
-    private static final TextColor ERROR_COLOR = TextColor.color(0xE36666);
 
     private static final Map<String, GameMode> GAME_MODE_MAP = Map.of(
             "0", GameMode.SURVIVAL,
@@ -33,145 +23,116 @@ public final class GamemodeHelper {
             "spectator", GameMode.SPECTATOR
     );
 
-    private GamemodeHelper() {
-    }
+    private GamemodeHelper() {}
 
     public static boolean canUse(Player player) {
         return LobbyConfig.Settings.BYPASS_USERS.contains(player.getUsername());
     }
 
     public static GameMode resolve(String input) {
-        if (input == null) {
-            return null;
-        }
+        if (input == null) return null;
         return GAME_MODE_MAP.get(input.toLowerCase(Locale.ROOT));
     }
 
     public static boolean setOwnGamemode(Player player, GameMode gameMode) {
         if (!canUse(player)) {
-            player.sendMessage(error("Недостаточно полномочий."));
+            player.sendMessage(Messages.error("Недостаточно полномочий."));
             return false;
         }
-
         if (gameMode == null) {
-            player.sendMessage(error("Не удалось определить игровой режим."));
+            player.sendMessage(Messages.error("Не удалось определить игровой режим."));
             return false;
         }
-
         if (player.getGameMode() == gameMode) {
-            player.sendMessage(
-                    warning("У тебя уже установлен режим ")
-                            .append(primary(getRussianGameModeName(gameMode)))
-                            .append(warning("."))
-            );
+            player.sendMessage(Messages.compose(
+                    Messages.warningText("У тебя уже установлен режим "),
+                    Messages.accent(getRussianGameModeName(gameMode)),
+                    Messages.warningText(".")));
             return false;
         }
-
         player.setGameMode(gameMode);
-        player.sendMessage(
-                success("Твой игровой режим изменён на ")
-                        .append(primary(getRussianGameModeName(gameMode)))
-                        .append(success("."))
-        );
+        player.sendMessage(Messages.compose(
+                Messages.successText("Твой игровой режим изменён на "),
+                Messages.accent(getRussianGameModeName(gameMode)),
+                Messages.successText(".")));
         return true;
     }
 
     public static boolean setTargetGamemode(CommandSender sender, Player target, GameMode gameMode) {
         if (target == null) {
-            sender.sendMessage(error("Игрок не найден."));
+            sender.sendMessage(Messages.error("Игрок не найден."));
             return false;
         }
-
         if (gameMode == null) {
-            sender.sendMessage(error("Не удалось определить игровой режим."));
+            sender.sendMessage(Messages.error("Не удалось определить игровой режим."));
             return false;
         }
-
         if (target.getGameMode() == gameMode) {
-            sender.sendMessage(
-                    warning("У игрока ")
-                            .append(primary(target.getUsername()))
-                            .append(warning(" уже установлен режим "))
-                            .append(primary(getRussianGameModeName(gameMode)))
-                            .append(warning("."))
-            );
+            sender.sendMessage(Messages.compose(
+                    Messages.warningText("У игрока "),
+                    Messages.accent(target.getUsername()),
+                    Messages.warningText(" уже установлен режим "),
+                    Messages.accent(getRussianGameModeName(gameMode)),
+                    Messages.warningText(".")));
             return false;
         }
-
         target.setGameMode(gameMode);
-
-        target.sendMessage(
-                successSoft("Твой игровой режим изменён на ")
-                        .append(primary(getRussianGameModeName(gameMode)))
-                        .append(successSoft("."))
-        );
-
-        sender.sendMessage(
-                success("Игроку ")
-                        .append(primary(target.getUsername()))
-                        .append(success(" установлен режим "))
-                        .append(primary(getRussianGameModeName(gameMode)))
-                        .append(success("."))
-        );
+        target.sendMessage(Messages.compose(
+                Messages.successText("Твой игровой режим изменён на "),
+                Messages.accent(getRussianGameModeName(gameMode)),
+                Messages.successText(".")));
+        sender.sendMessage(Messages.compose(
+                Messages.successText("Игроку "),
+                Messages.accent(target.getUsername()),
+                Messages.successText(" установлен режим "),
+                Messages.accent(getRussianGameModeName(gameMode)),
+                Messages.successText(".")));
         return true;
     }
 
     public static String getRussianGameModeName(GameMode gameMode) {
         return switch (gameMode) {
-            case SURVIVAL -> "ВЫЖИВАНИЕ";
-            case CREATIVE -> "КРЕАТИВ";
+            case SURVIVAL  -> "ВЫЖИВАНИЕ";
+            case CREATIVE  -> "КРЕАТИВ";
             case ADVENTURE -> "ПРИКЛЮЧЕНИЕ";
             case SPECTATOR -> "НАБЛЮДАТЕЛЬ";
-            default -> "НЕИЗВЕСТНО";
+            default        -> "НЕИЗВЕСТНО";
         };
     }
 
     public static Component usage(String commandName) {
-        return warning("Использование: ")
-                .append(primary("/" + commandName + " <режим> [игрок]"))
-                .append(Component.newline())
-                .append(text("Доступные режимы: "))
-                .append(primarySoft("survival, creative, adventure, spectator"))
-                .append(text(" или "))
-                .append(primary("0, 1, 2, 3"));
+        return Messages.compose(
+                Messages.warningText("Использование: "),
+                Messages.accent("/" + commandName + " <режим> [игрок]"),
+                Component.newline(),
+                Messages.text("Доступные режимы: "),
+                Messages.accent("survival, creative, adventure, spectator"),
+                Messages.text(" или "),
+                Messages.accent("0, 1, 2, 3"));
     }
 
     public static Component unknownMode(String input) {
-        return error("Неизвестный игровой режим ")
-                .append(primary(input))
-                .append(error("."))
-                .append(Component.newline())
-                .append(text("Доступные режимы: "))
-                .append(primarySoft("survival, creative, adventure, spectator"))
-                .append(text(" или "))
-                .append(primary("0, 1, 2, 3"));
+        return Messages.compose(
+                Messages.errorText("Неизвестный игровой режим "),
+                Messages.accent(input),
+                Messages.errorText("."),
+                Component.newline(),
+                Messages.text("Доступные режимы: "),
+                Messages.accent("survival, creative, adventure, spectator"),
+                Messages.text(" или "),
+                Messages.accent("0, 1, 2, 3"));
     }
 
-    public static Component text(String text) {
-        return Component.text(text, TEXT_COLOR);
-    }
+    // ── Fragment helpers (NO prefix) — for callers chaining into a single line ─
 
-    public static Component primary(String text) {
-        return Component.text(text, PRIMARY_COLOR);
-    }
-
-    public static Component primarySoft(String text) {
-        return Component.text(text, PRIMARY_SOFT_COLOR);
-    }
-
-    public static Component success(String text) {
-        return Component.text(text, SUCCESS_COLOR);
-    }
-
-    public static Component successSoft(String text) {
-        return Component.text(text, SUCCESS_SOFT_COLOR);
-    }
-
-    public static Component warning(String text) {
-        return Component.text(text, WARNING_COLOR);
-    }
-
-    public static Component error(String text) {
-        return Component.text(text, ERROR_COLOR);
-    }
+    /** Plain body text fragment. Use {@link Messages#info(String)} for a prefixed line. */
+    public static Component text(String value)    { return Messages.text(value); }
+    /** Highlight color fragment (player names, ids, values). */
+    public static Component primary(String value) { return Messages.accent(value); }
+    /** Green fragment — successes within composed sentences. */
+    public static Component success(String value) { return Messages.successText(value); }
+    /** Yellow fragment — warnings within composed sentences. */
+    public static Component warning(String value) { return Messages.warningText(value); }
+    /** Red fragment — errors within composed sentences. */
+    public static Component error(String value)   { return Messages.errorText(value); }
 }

@@ -1,39 +1,23 @@
 package ua.vsevolod.lobby.config.server;
 
-import net.minestom.server.item.Material;
-
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Thin facade over {@link ServersConfig} — the registry is now config-driven
+ * ({@code config/servers.yml}), not hardcoded. Always reflects the latest reload.
+ */
 public final class ServerRegistry {
 
     private ServerRegistry() {
     }
 
-    public static final List<ServerInfo> LOBBY_SERVERS = List.of(
-            new ServerInfo(
-                    "grief.1.16x",
-                    "Гриферский",
-                    "1.21.8",
-                    ServerStatus.ONLINE,
-                    100,
-                    new String[]{"ПвП", "Халява", "Freedom", "ТопСервер", "Кланы", "Рейды"},
-                    Material.DIAMOND_SWORD
-            ),
-            new ServerInfo(
-                    "anarchy.1.16x",
-                    "Анархия",
-                    "1.21.8",
-                    ServerStatus.ONLINE,
-                    100,
-                    new String[]{"ПвП", "Халява", "Freedom", "ТопСервер", "Кланы", "Рейды"},
-                    Material.DIAMOND_SWORD
-            )
-    );
+    /** All configured servers, in config order. */
+    public static List<ServerInfo> servers() {
+        return ServersConfig.get().serverInfos();
+    }
 
     public static Optional<ServerInfo> findById(String id) {
-        return LOBBY_SERVERS.stream()
-                .filter(server -> server.id().equalsIgnoreCase(id))
-                .findFirst();
+        return ServersConfig.get().findById(id);
     }
 }

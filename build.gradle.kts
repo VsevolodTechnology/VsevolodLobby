@@ -37,12 +37,14 @@ tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJ
 }
 
 dependencies {
-    implementation("net.minestom:minestom:2026.03.25-1.21.11")
+    implementation("net.minestom:minestom:2026.05.11-1.21.11")
     implementation("com.google.zxing:core:3.5.3")
     implementation("dev.lu15:spark-minestom:1.10-SNAPSHOT")
     implementation("org.mongodb:mongodb-driver-sync:5.2.1")
     implementation("org.slf4j:slf4j-simple:2.0.13")
     implementation("org.yaml:snakeyaml:2.3")
+    implementation("de.exlll:configlib-yaml:4.8.1")
+    implementation("net.kyori:adventure-text-minimessage:4.26.1")
 }
 
 tasks.test {

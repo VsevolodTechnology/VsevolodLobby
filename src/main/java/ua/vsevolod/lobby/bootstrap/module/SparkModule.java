@@ -9,6 +9,6 @@ public class SparkModule implements Module {
 
     @Override
     public void load() {
-        SparkService.init(Path.of("spark"));
+        SparkService.init(Path.of("storage", "spark"));
     }
 }

@@ -7,16 +7,21 @@ import ua.vsevolod.lobby.bootstrap.module.CommandModule;
 import ua.vsevolod.lobby.bootstrap.module.InstanceModule;
 import ua.vsevolod.lobby.bootstrap.module.LobbyModule;
 import ua.vsevolod.lobby.bootstrap.module.SparkModule;
+import ua.vsevolod.lobby.config.LoggingConfig;
 import ua.vsevolod.lobby.config.ProxyConfig;
+import ua.vsevolod.lobby.config.server.ServersConfig;
 import ua.vsevolod.lobby.feature.admin.config.CommandsReferenceWriter;
-import ua.vsevolod.lobby.feature.admin.config.ConfigManager;
-import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcConfigSection;
-import ua.vsevolod.lobby.feature.lobby.player.behavior.PlayerBehaviorConfigSection;
-import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfigSection;
-import ua.vsevolod.lobby.feature.lobby.ui.hologram.config.HologramsConfigSection;
-import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfigSection;
-import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarConfigSection;
-import ua.vsevolod.lobby.feature.lobby.ui.tab.TabConfigSection;
+import ua.vsevolod.lobby.util.ServerLogger;
+import ua.vsevolod.lobby.feature.lobby.interaction.npc.config.NpcsConfig;
+import ua.vsevolod.lobby.feature.lobby.player.behavior.PlayerBehaviorConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.cutscene.CutsceneConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.welcome.WelcomeConfig;
+import ua.vsevolod.lobby.feature.lobby.interaction.qr.QrCardConfig;
+import ua.vsevolod.lobby.feature.lobby.ui.hologram.config.HologramsConfig;
+import ua.vsevolod.lobby.feature.lobby.ui.menu.config.MenusConfig;
+import ua.vsevolod.lobby.feature.lobby.ui.sidebar.SidebarConfig;
+import ua.vsevolod.lobby.feature.lobby.ui.tab.TabConfig;
 import ua.vsevolod.lobby.integration.console.ConsoleListener;
 import ua.vsevolod.lobby.integration.console.ShutdownHook;
 
@@ -24,9 +29,14 @@ import java.net.InetSocketAddress;
 
 public class ServerBootstrap {
 
-    public static final ConfigManager CONFIG_MANAGER = new ConfigManager();
-
     public static void bootstrap() {
+        long bootStart = System.nanoTime();
+
+        // Init logger with defaults first so anything below can log
+        ServerLogger.init(LoggingConfig.load());
+        ServerLogger log = ServerLogger.get();
+        log.info("Server initialization started");
+
         ProxyConfig proxyConfig = ProxyConfig.load();
 
         var server = proxyConfig.velocityEnabled()
@@ -73,17 +83,22 @@ public class ServerBootstrap {
 
         if (proxyConfig.velocityEnabled()) {
             HandshakeOverride.install();
-            System.out.println("[Bootstrap] Velocity modern forwarding ENABLED — accepting any client protocol (Via translates downstream).");
+            log.info("Velocity modern forwarding enabled");
         }
 
-        CONFIG_MANAGER.register(TabConfigSection.INSTANCE);
-        CONFIG_MANAGER.register(SidebarConfigSection.INSTANCE);
-        CONFIG_MANAGER.register(NpcConfigSection.INSTANCE);
-        CONFIG_MANAGER.register(JoinItemsConfigSection.INSTANCE);
-        CONFIG_MANAGER.register(MenusConfigSection.INSTANCE);
-        CONFIG_MANAGER.register(HologramsConfigSection.INSTANCE);
-        CONFIG_MANAGER.register(PlayerBehaviorConfigSection.INSTANCE);
-        CONFIG_MANAGER.loadAll();
+        // All configs are ConfigLib-backed — each init() loads the file and registers a
+        // /reload hook with ConfigReload.
+        ServersConfig.init();
+        TabConfig.init();
+        SidebarConfig.init();
+        NpcsConfig.init();
+        JoinItemsConfig.init();
+        MenusConfig.init();
+        HologramsConfig.init();
+        PlayerBehaviorConfig.init();
+        WelcomeConfig.init();
+        CutsceneConfig.init();
+        QrCardConfig.init();
         CommandsReferenceWriter.write();
 
         ShutdownHook.register();
@@ -96,6 +111,34 @@ public class ServerBootstrap {
         loader.register(new LobbyModule());
         loader.loadAll();
 
-        server.start(new InetSocketAddress(proxyConfig.hostAddress(), proxyConfig.hostPort()));
+        // ── Bind decision ────────────────────────────────────────────────
+        // When the embedded ViaProxy bridge is enabled, the EXTERNAL hostPort is owned by
+        // ViaProxy and Minestom binds to 127.0.0.1:internalPort for the loopback hop.
+        // Otherwise Minestom binds directly to the external hostPort as before.
+        boolean viaEnabled = proxyConfig.viaProxyEnabled();
+        String bindAddress = viaEnabled ? "127.0.0.1" : proxyConfig.hostAddress();
+        int bindPort = viaEnabled ? proxyConfig.internalPort() : proxyConfig.hostPort();
+        server.start(new InetSocketAddress(bindAddress, bindPort));
+
+        if (viaEnabled) {
+            try {
+                ua.vsevolod.lobby.feature.admin.via.ViaProxyBridge bridge =
+                        new ua.vsevolod.lobby.feature.admin.via.ViaProxyBridge();
+                bridge.start(
+                        proxyConfig.hostAddress(),
+                        proxyConfig.hostPort(),
+                        "127.0.0.1",
+                        proxyConfig.internalPort(),
+                        proxyConfig.viaTargetVersion());
+                ua.vsevolod.lobby.bootstrap.LobbyShutdown.register(bridge::stop);
+            } catch (Exception e) {
+                log.error("Failed to start embedded ViaProxy: " + e.getMessage()
+                        + " — legacy clients will be unable to connect");
+                e.printStackTrace();
+            }
+        }
+
+        double uptimeSec = (System.nanoTime() - bootStart) / 1_000_000_000.0;
+        ServerLogger.get().pterodactylReady(uptimeSec);
     }
 }

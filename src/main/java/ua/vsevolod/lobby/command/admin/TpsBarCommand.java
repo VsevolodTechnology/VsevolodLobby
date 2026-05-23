@@ -1,27 +1,20 @@
 package ua.vsevolod.lobby.command.admin;
 
-import net.minestom.server.MinecraftServer;
-import net.minestom.server.command.builder.Command;
 import net.minestom.server.entity.Player;
-import ua.vsevolod.lobby.config.LobbyConfig;
 import ua.vsevolod.lobby.feature.admin.StatsBarService;
+import ua.vsevolod.lobby.util.Messages;
 
-public class TpsBarCommand extends Command {
+public class TpsBarCommand extends AdminCommand {
 
     public TpsBarCommand() {
         super("tpsbar");
 
-        setCondition((sender, commandString) ->
-                sender instanceof Player p && LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername()));
-
         setDefaultExecutor((sender, context) -> {
-            if (!(sender instanceof Player p) || !LobbyConfig.Settings.BYPASS_USERS.contains(p.getUsername())) {
-                return;
-            }
+            if (!(sender instanceof Player p)) return;
             boolean shown = StatsBarService.get().toggleTps(p);
-            p.sendMessage(shown ? "§aTPS-бар включён." : "§eTPS-бар выключен.");
+            p.sendMessage(shown
+                    ? Messages.success("TPS-бар включён.")
+                    : Messages.warning("TPS-бар выключен."));
         });
-
-        MinecraftServer.getCommandManager().register(this);
     }
 }

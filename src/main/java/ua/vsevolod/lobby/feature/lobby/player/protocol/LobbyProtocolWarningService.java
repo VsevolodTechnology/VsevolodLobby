@@ -7,6 +7,7 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.sound.SoundEvent;
 import net.minestom.server.timer.TaskSchedule;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -26,23 +27,45 @@ import static net.minestom.server.timer.ExecutionType.TICK_START;
  */
 public final class LobbyProtocolWarningService {
 
-    private static final int RECOMMENDED_PROTOCOL = 774;
+    /**
+     * Protocol players are expected to be on. Tied to {@link MinecraftServer#PROTOCOL_VERSION}
+     * so it auto-bumps whenever the Minestom dependency is upgraded — no constant to forget.
+     */
+    private static int recommendedProtocol() {
+        return MinecraftServer.PROTOCOL_VERSION;
+    }
+
     private static final int WARNING_DURATION_SECONDS = 30;
 
     /** Active warnings keyed by player UUID. */
     private final Map<UUID, Warning> active = new ConcurrentHashMap<>();
+    private final PlayerPreferencesService preferencesService;
     private boolean tickerStarted = false;
+
+    public LobbyProtocolWarningService(PlayerPreferencesService preferencesService) {
+        this.preferencesService = preferencesService;
+    }
 
     public synchronized void showIfNeeded(Player player) {
         if (!player.hasTag(LobbyConfig.Settings.IDENTIFIER_CLIENT_PROTOCOL)) {
             return;
         }
         int protocol = player.getTag(LobbyConfig.Settings.IDENTIFIER_CLIENT_PROTOCOL);
-        if (protocol >= RECOMMENDED_PROTOCOL) {
+        if (protocol >= recommendedProtocol()) {
+            return;
+        }
+        // Per-player opt-out from LobbySettingsMenu — pref is `protocolWarningEnabled` (default on).
+        if (!preferencesService.get(player.getUuid()).protocolWarningEnabled()) {
             return;
         }
         showWarning(player);
         ensureTickerStarted();
+    }
+
+    /** Hide an active warning for a player (called when they opt out via settings menu). */
+    public synchronized void hideFor(Player player) {
+        Warning w = active.remove(player.getUuid());
+        if (w != null) player.hideBossBar(w.bar);
     }
 
     private void showWarning(Player player) {

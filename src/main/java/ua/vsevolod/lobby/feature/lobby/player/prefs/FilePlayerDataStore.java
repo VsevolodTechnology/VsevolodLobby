@@ -48,6 +48,8 @@ public final class FilePlayerDataStore implements PlayerDataStore {
         boolean hidden = bool(props, "playersHidden", false);
         boolean sidebarHidden = bool(props, "sidebarHidden", false);
         boolean positionSaveEnabled = bool(props, "positionSaveEnabled", true);
+        boolean protocolWarningEnabled = bool(props, "protocolWarningEnabled", true);
+        long firstSeenEpoch = parseLong(props.getProperty("firstSeenEpoch"), 0L);
 
         Pos pos = null;
         if (bool(props, "hasPosition", false)) {
@@ -62,7 +64,12 @@ public final class FilePlayerDataStore implements PlayerDataStore {
             } catch (NumberFormatException ignored) {}
         }
 
-        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, pos);
+        return new PlayerPreferences(music, hidden, sidebarHidden, positionSaveEnabled, protocolWarningEnabled, firstSeenEpoch, pos);
+    }
+
+    private static long parseLong(String s, long fallback) {
+        if (s == null) return fallback;
+        try { return Long.parseLong(s.trim()); } catch (NumberFormatException e) { return fallback; }
     }
 
     @Override
@@ -72,6 +79,8 @@ public final class FilePlayerDataStore implements PlayerDataStore {
         props.setProperty("playersHidden", String.valueOf(prefs.playersHidden()));
         props.setProperty("sidebarHidden", String.valueOf(prefs.sidebarHidden()));
         props.setProperty("positionSaveEnabled", String.valueOf(prefs.positionSaveEnabled()));
+        props.setProperty("protocolWarningEnabled", String.valueOf(prefs.protocolWarningEnabled()));
+        props.setProperty("firstSeenEpoch", String.valueOf(prefs.firstSeenEpoch()));
 
         Pos pos = prefs.lastPosition();
         if (pos != null) {

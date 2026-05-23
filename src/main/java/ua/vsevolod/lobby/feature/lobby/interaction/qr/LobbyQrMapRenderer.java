@@ -7,13 +7,34 @@ import com.google.zxing.qrcode.QRCodeWriter;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
 import net.minestom.server.map.framebuffers.Graphics2DFramebuffer;
 import net.minestom.server.network.packet.server.play.MapDataPacket;
+import ua.vsevolod.lobby.util.ServerLogger;
 
-import java.awt.*;
-import java.awt.geom.RoundRectangle2D;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import javax.imageio.ImageIO;
 
+/**
+ * Renders the off-hand socials map.
+ *
+ * <p>Two sources, in priority order:</p>
+ * <ol>
+ *   <li><b>Custom image</b> — when {@code qr-card.yml: image_file} points at an existing file
+ *       on disk, that image is loaded and pasted onto the map. Admins can swap in their own
+ *       branded QR without rebuilding the jar.</li>
+ *   <li><b>Generated QR</b> — otherwise a plain black-on-white QR is generated from the
+ *       configured {@code qr_url} straight off the zxing bit-matrix.</li>
+ * </ol>
+ *
+ * <p>A Minecraft map only stores indices into a fixed 143-colour palette, so any colour that
+ * isn't a palette colour is mis-quantized on render and looks distorted. Pure black/white
+ * (the generated QR) is lossless; a custom <i>colour</i> image will still shift toward the
+ * palette — for a clean result a custom image should also be black/white.</p>
+ */
 public final class LobbyQrMapRenderer {
 
     private static final int MAP_SIZE = 128;
@@ -21,146 +42,85 @@ public final class LobbyQrMapRenderer {
     private LobbyQrMapRenderer() {
     }
 
-    public static MapDataPacket createPacket(int mapId, String text) {
-        BufferedImage image = renderPrettyQr(text, MAP_SIZE, MAP_SIZE, false);
+    /**
+     * @param mapId     map id to bind the texture to
+     * @param text      URL to encode when no custom image is used
+     * @param imageFile path to a custom image, or blank/null to generate a QR from {@code text}
+     */
+    public static MapDataPacket createPacket(int mapId, String text, String imageFile) {
+        BufferedImage image = loadCustomImage(imageFile);
+        if (image == null) {
+            image = renderQr(text, MAP_SIZE, MAP_SIZE);
+        }
+
         Graphics2DFramebuffer framebuffer = new Graphics2DFramebuffer();
         Graphics2D g = framebuffer.getRenderer();
-
+        // 1:1 pixel copy — nearest-neighbour, no AA. Any interpolation here would invent
+        // grey in-between pixels that the map palette then mis-quantizes.
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         g.drawImage(image, 0, 0, MAP_SIZE, MAP_SIZE, null);
         g.dispose();
-
         return framebuffer.preparePacket(mapId);
     }
 
-    public static BufferedImage renderPrettyQr(String text, int width, int height, boolean drawCenterLogo) {
+    /**
+     * Load an admin-supplied image from disk; null if not configured or unreadable.
+     *
+     * <p>The configured path is tried as-is (relative to the server working directory), then
+     * under {@code config/} — so an admin can drop the file next to {@code server.jar} or
+     * into the config folder and it just works.</p>
+     */
+    private static BufferedImage loadCustomImage(String imageFile) {
+        if (imageFile == null || imageFile.isBlank()) return null;
+
+        Path resolved = null;
+        for (Path candidate : new Path[]{Path.of(imageFile), Path.of("config").resolve(imageFile)}) {
+            if (Files.isRegularFile(candidate)) {
+                resolved = candidate;
+                break;
+            }
+        }
+        if (resolved == null) {
+            ServerLogger.get().warn("QR card image_file '" + imageFile
+                    + "' not found (looked in server root and config/) — falling back to generated QR.");
+            return null;
+        }
+        try {
+            BufferedImage img = ImageIO.read(resolved.toFile());
+            if (img == null) {
+                ServerLogger.get().warn("QR card image_file '" + resolved
+                        + "' is not a readable image — falling back to generated QR.");
+            } else {
+                ServerLogger.get().info("QR card using custom image: " + resolved);
+            }
+            return img;
+        } catch (Exception e) {
+            ServerLogger.get().warn("Failed to read QR card image_file '" + resolved
+                    + "': " + e.getMessage() + " — falling back to generated QR.");
+            return null;
+        }
+    }
+
+    /** Plain black-on-white QR straight from the bit-matrix — no styling, no colour choices. */
+    public static BufferedImage renderQr(String text, int width, int height) {
         try {
             Map<EncodeHintType, Object> hints = new HashMap<>();
-            hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.H);
-            hints.put(EncodeHintType.MARGIN, 2); // quiet zone
+            hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+            hints.put(EncodeHintType.MARGIN, 1);
             hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
 
-            QRCodeWriter writer = new QRCodeWriter();
-            BitMatrix matrix = writer.encode(text, BarcodeFormat.QR_CODE, width, height, hints);
-
-            int matrixWidth = matrix.getWidth();
-            int matrixHeight = matrix.getHeight();
+            BitMatrix matrix = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, width, height, hints);
 
             BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = image.createGraphics();
-
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-
-            Color bg = new Color(0xFF, 0xF8, 0xE7);      // warm white
-            Color fg = new Color(0x1E, 0x29, 0x3B);      // dark slate
-            Color eyeOuter = new Color(0xF5, 0x9E, 0x0B); // amber
-            Color eyeInner = new Color(0x1E, 0x29, 0x3B);
-
-            g.setColor(bg);
-            g.fillRect(0, 0, width, height);
-
-            double cellW = (double) width / matrixWidth;
-            double cellH = (double) height / matrixHeight;
-            double dotScale = 0.82;
-
-            // Сначала обычные модули, кроме finder patterns
-            for (int y = 0; y < matrixHeight; y++) {
-                for (int x = 0; x < matrixWidth; x++) {
-                    if (!matrix.get(x, y)) continue;
-                    if (isInsideFinder(x, y, matrixWidth, matrixHeight)) continue;
-
-                    double px = x * cellW;
-                    double py = y * cellH;
-                    double dw = cellW * dotScale;
-                    double dh = cellH * dotScale;
-                    double ox = px + (cellW - dw) / 2.0;
-                    double oy = py + (cellH - dh) / 2.0;
-
-                    g.setColor(fg);
-                    g.fill(new RoundRectangle2D.Double(
-                            ox, oy, dw, dh,
-                            Math.min(dw, dh) * 0.55,
-                            Math.min(dw, dh) * 0.55
-                    ));
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    image.setRGB(x, y, matrix.get(x, y) ? 0x000000 : 0xFFFFFF);
                 }
             }
-
-            // Красивые finder patterns
-            drawFinder(g, 0, 0, cellW, cellH, eyeOuter, eyeInner, bg);
-            drawFinder(g, matrixWidth - 7, 0, cellW, cellH, eyeOuter, eyeInner, bg);
-            drawFinder(g, 0, matrixHeight - 7, cellW, cellH, eyeOuter, eyeInner, bg);
-
-            // Маленький центр-бейдж. Для карты лучше выключить.
-            if (drawCenterLogo) {
-                int badgeSize = 14; // больше уже рискованно для 128x128
-                int cx = width / 2 - badgeSize / 2;
-                int cy = height / 2 - badgeSize / 2;
-
-                g.setColor(Color.WHITE);
-                g.fillRoundRect(cx - 2, cy - 2, badgeSize + 4, badgeSize + 4, 6, 6);
-
-                g.setColor(new Color(0xF5, 0x9E, 0x0B));
-                g.fillRoundRect(cx, cy, badgeSize, badgeSize, 5, 5);
-
-                g.setColor(Color.WHITE);
-                g.setFont(new Font("SansSerif", Font.BOLD, 9));
-                FontMetrics fm = g.getFontMetrics();
-                String s = "HW";
-                int tx = cx + (badgeSize - fm.stringWidth(s)) / 2;
-                int ty = cy + ((badgeSize - fm.getHeight()) / 2) + fm.getAscent();
-                g.drawString(s, tx, ty);
-            }
-
-            g.dispose();
             return image;
         } catch (Exception e) {
             throw new RuntimeException("Failed to render QR", e);
         }
-    }
-
-    private static boolean isInsideFinder(int x, int y, int w, int h) {
-        return inBox(x, y, 0, 0, 7, 7)
-                || inBox(x, y, w - 7, 0, 7, 7)
-                || inBox(x, y, 0, h - 7, 7, 7);
-    }
-
-    private static boolean inBox(int x, int y, int bx, int by, int bw, int bh) {
-        return x >= bx && x < bx + bw && y >= by && y < by + bh;
-    }
-
-    private static void drawFinder(Graphics2D g, int mx, int my, double cellW, double cellH,
-                                   Color outer, Color inner, Color bg) {
-        double x = mx * cellW;
-        double y = my * cellH;
-        double w = 7 * cellW;
-        double h = 7 * cellH;
-
-        // outer
-        g.setColor(outer);
-        g.fill(new RoundRectangle2D.Double(x, y, w, h, cellW * 2.2, cellH * 2.2));
-
-        // ring gap
-        g.setColor(bg);
-        g.fill(new RoundRectangle2D.Double(
-                x + cellW, y + cellH,
-                w - cellW * 2, h - cellH * 2,
-                cellW * 1.6, cellH * 1.6
-        ));
-
-        // inner ring
-        g.setColor(outer);
-        g.fill(new RoundRectangle2D.Double(
-                x + cellW * 1.5, y + cellH * 1.5,
-                w - cellW * 3, h - cellH * 3,
-                cellW * 1.2, cellH * 1.2
-        ));
-
-        // center dot
-        g.setColor(inner);
-        g.fill(new RoundRectangle2D.Double(
-                x + cellW * 2.5, y + cellH * 2.5,
-                cellW * 2, cellH * 2,
-                cellW, cellH
-        ));
     }
 }

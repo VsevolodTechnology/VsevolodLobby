@@ -9,6 +9,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.minestom.server.MinecraftServer;
+import net.minestom.server.component.DataComponents;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.player.PlayerDisconnectEvent;
 import net.minestom.server.event.player.PlayerSpawnEvent;
@@ -18,9 +19,9 @@ import net.minestom.server.tag.Tag;
 import net.minestom.server.timer.ExecutionType;
 import net.minestom.server.timer.Task;
 import net.minestom.server.timer.TaskSchedule;
-import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.JoinItemsConfig;
+import ua.vsevolod.lobby.feature.lobby.player.join.items.ToggleItemDefinition;
 import ua.vsevolod.lobby.feature.lobby.player.prefs.PlayerPreferencesService;
-import ua.vsevolod.lobby.util.Text;
 
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -42,19 +43,6 @@ public final class LobbyMusicManager {
     private static final float MUSIC_PITCH = 1.0f;
     private static final TaskSchedule AMBIENT_SUPPRESS_INTERVAL = TaskSchedule.seconds(5);
 
-    public final static Component MUSIC_TEXT = Text.c("&#F1BB58&lМ&#F1B958&lу&#F1B658&lз&#F1B458&lы&#F1B158&lк&#F1AF58&lа");
-    private final static Component MUSIC_TEXT_ON = MUSIC_TEXT.append(Component.space())
-            .append(Component.text("[", NamedTextColor.DARK_GRAY))
-            .append(Component.text("Вкл", TextColor.color(0x8EB126)))
-            .append(Component.text("]", NamedTextColor.DARK_GRAY)).decoration(TextDecoration.ITALIC, false);
-    private final static Component MUSIC_TEXT_OFF = MUSIC_TEXT.append(Component.space())
-            .append(Component.text("[", NamedTextColor.DARK_GRAY))
-            .append(Component.text("Выкл", TextColor.color(0xFA3B3B)))
-            .append(Component.text("]", NamedTextColor.DARK_GRAY)).decoration(TextDecoration.ITALIC, false);
-
-    private static final ItemStack TOGGLE_ITEM_ON = buildMusicToggle(true);
-    private static final ItemStack TOGGLE_ITEM_OFF = buildMusicToggle(false);
-
     private PlayerPreferencesService preferencesService;
 
     private final List<Track> allTracks = new ArrayList<>();
@@ -66,27 +54,12 @@ public final class LobbyMusicManager {
         registerAllTracks();
     }
 
+    /** Builds the music toggle item live from {@code config/toggle-items.yml}. */
     public static ItemStack getMusicToggle(boolean enabled) {
-        return enabled ? TOGGLE_ITEM_ON : TOGGLE_ITEM_OFF;
-    }
-
-    private static ItemStack buildMusicToggle(boolean enabled) {
-        Material material = enabled ? Material.MUSIC_DISC_CAT : Material.MUSIC_DISC_BLOCKS;
-        var space = Component.text(" - ", NamedTextColor.GRAY);
-
-        return ItemStack.builder(material)
-                .customName(enabled ?
-                        MUSIC_TEXT_ON :
-                        MUSIC_TEXT_OFF)
-                .lore(
-                        Component.empty(),
-                        Component.text(" «Информация»", TextColor.color(0x65D1FC)).decoration(TextDecoration.ITALIC, false),
-                        Component.text().append(space).append(Component.text("Фоновая музыка лобби", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
-                        Component.text().append(space).append(Component.text("ПКМ — включить/выключить", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
-                        Component.text().append(space).append(Component.text("Клавиша Q — выбор музыки", TextColor.color(LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL))).decoration(TextDecoration.ITALIC, false).build(),
-                        Component.empty(),
-                        Component.text("➥ Нажмите для действия", NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false)
-                )
+        ToggleItemDefinition def = JoinItemsConfig.get().toggleItems.music();
+        return ItemStack.builder(def.material(enabled))
+                .set(DataComponents.CUSTOM_NAME, def.displayName(enabled))
+                .set(DataComponents.LORE, def.lore(enabled))
                 .hideExtraTooltip()
                 .set(MUSIC_TAG, (byte) 1)
                 .build();

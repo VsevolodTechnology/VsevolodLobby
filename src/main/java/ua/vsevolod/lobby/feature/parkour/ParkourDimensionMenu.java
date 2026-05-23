@@ -94,7 +94,7 @@ public final class ParkourDimensionMenu {
 
     static ItemStack createItem() {
         Component name = Component.text()
-                .append(Text.c("&#F1BB58&lИ&#F1B858&lз&#F1B558&lм&#F1B258&lе&#F1AF58&lр&#F1AC58&lе&#F1A958&lн&#F1A658&lи&#F1A358&lе"))
+                .append(Text.c("<gradient:#AE3AF3:#985DBC><bold>Измерение</bold></gradient>"))
                 .append(Component.text(" [", NamedTextColor.DARK_GRAY))
                 .append(Component.text("Выбрать", TextColor.color(0x8EB126)))
                 .append(Component.text("]", NamedTextColor.DARK_GRAY))
@@ -124,7 +124,7 @@ public final class ParkourDimensionMenu {
     // ── Menu construction ───────────────────────────────────────────────────
 
     private Inventory createMenu() {
-        Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Text.c("&8Измерение"));
+        Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Text.c("<dark_gray>Измерение"));
 
         ItemStack decor = ItemStack.builder(Material.BLACK_STAINED_GLASS_PANE)
                 .set(DataComponents.CUSTOM_NAME, Text.c(""))
@@ -138,19 +138,19 @@ public final class ParkourDimensionMenu {
 
         inv.setItemStack(OVERWORLD_SLOT, createDimensionItem(
                 Material.GRASS_BLOCK,
-                "&#8FAE8B&lОбычный мир",
+                "<#8FAE8B><bold>Обычный мир",
                 "Дневное небо с облаками."
         ));
 
         inv.setItemStack(NETHER_SLOT, createDimensionItem(
                 Material.NETHERRACK,
-                "&#C86E6E&lНижний мир",
+                "<#C86E6E><bold>Нижний мир",
                 "Темно-красное небо Незера."
         ));
 
         inv.setItemStack(END_SLOT, createDimensionItem(
                 Material.END_STONE,
-                "&#B48EDC&lКрай",
+                "<#B48EDC><bold>Край",
                 "Темное звездное небо Энда."
         ));
 

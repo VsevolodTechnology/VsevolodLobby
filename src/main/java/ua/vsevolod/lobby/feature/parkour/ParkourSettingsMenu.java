@@ -20,6 +20,7 @@ import net.minestom.server.registry.RegistryKey;
 import net.minestom.server.tag.Tag;
 import net.minestom.server.world.DimensionType;
 import ua.vsevolod.lobby.config.LobbyConfig;
+import ua.vsevolod.lobby.util.ServerLogger;
 import ua.vsevolod.lobby.util.Text;
 
 import java.util.ArrayList;
@@ -40,21 +41,23 @@ public final class ParkourSettingsMenu {
     private static final Tag<String> THEME_MENU_TAG    = Tag.String("parkour-theme-menu");
 
     // Slot layout — CHEST_5_ROW (45 slots)
-    private static final int DIFF_CHILL_SLOT   = 1;
-    private static final int DIFF_NORMAL_SLOT  = 3;
-    private static final int DIFF_HARD_SLOT    = 5;
+    // Row 0: regular difficulties — evenly spaced on positions 1 / 4 / 7
+    private static final int DIFF_NORMAL_SLOT  = 1;
+    private static final int DIFF_HARD_SLOT    = 4;
     private static final int DIFF_EXTREME_SLOT = 7;
-
-    private static final int DIM_OVERWORLD_SLOT = 11;
-    private static final int DIM_NETHER_SLOT    = 13;
-    private static final int DIM_END_SLOT       = 15;
-
-    private static final int THEME_BUTTON_SLOT = 19;
-    private static final int SOUND_SLOT        = 21;
-    private static final int TRAINING_SLOT     = 23;
-    private static final int MUSIC_SLOT        = 25;
-    private static final int MUSIC_SELECT_SLOT = 26;
-
+    // Row 1: competitive (centred, its own row)
+    private static final int DIFF_COMPETITIVE_SLOT = 13;
+    // Row 2: dimensions
+    private static final int DIM_OVERWORLD_SLOT = 20;
+    private static final int DIM_NETHER_SLOT    = 22;
+    private static final int DIM_END_SLOT       = 24;
+    // Row 3: other settings
+    private static final int THEME_BUTTON_SLOT = 28;
+    private static final int SOUND_SLOT        = 30;
+    private static final int TRAINING_SLOT     = 32;
+    private static final int MUSIC_SLOT        = 34;
+    private static final int MUSIC_SELECT_SLOT = 35;
+    // Row 4: apply
     private static final int APPLY_SLOT = 40;
 
     // Theme sub-menu (CHEST_3_ROW)
@@ -67,7 +70,7 @@ public final class ParkourSettingsMenu {
 
     private static final TextColor LORE_WHITE = LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL;
     private static final TextColor HINT_COLOR = TextColor.color(0xC8A060);
-    private static final TextColor ACCENT = TextColor.color(0xF1BB58);
+    private static final TextColor ACCENT = TextColor.color(0xAE3AF3);
     private static final TextColor GREEN  = TextColor.color(0x55E068);
     private static final TextColor RED    = TextColor.color(0xE05555);
 
@@ -95,8 +98,9 @@ public final class ParkourSettingsMenu {
         SelectedSettings withSound(ParkourSoundPreset s)     { return new SelectedSettings(difficulty, theme, dimension, training, s); }
     }
 
+    // Defaults: Nether dimension + Competitive mode. The player can change both in the menu.
     private static final SelectedSettings DEFAULT_SETTINGS = new SelectedSettings(
-            ParkourDifficulty.NORMAL, null, DimensionType.THE_END, false, ParkourSoundPreset.STANDARD);
+            ParkourDifficulty.COMPETITIVE, null, DimensionType.THE_NETHER, false, ParkourSoundPreset.STANDARD);
 
     private final Map<UUID, SelectedSettings> selections  = new ConcurrentHashMap<>();
     /** Per-player cached Inventory for the main settings menu. Reused across clicks. */
@@ -119,7 +123,78 @@ public final class ParkourSettingsMenu {
     // ── Settings accessors ──────────────────────────────────────────────────
 
     private SelectedSettings getSettings(UUID uuid) {
-        return selections.computeIfAbsent(uuid, k -> DEFAULT_SETTINGS.withTheme(ParkourTheme.randomTheme()));
+        return selections.computeIfAbsent(uuid, k -> {
+            SelectedSettings saved = loadFromFile(k);
+            return saved != null ? saved : DEFAULT_SETTINGS.withTheme(ParkourTheme.randomTheme());
+        });
+    }
+
+    // ── Persistence (storage/parkour-prefs.properties) ───────────────────────
+
+    private static final java.nio.file.Path PREFS_FILE =
+            java.nio.file.Paths.get("storage", "parkour-prefs.properties");
+
+    /** Sets a player's settings and persists them so they survive a restart. */
+    private void putSettings(UUID uuid, SelectedSettings settings) {
+        selections.put(uuid, settings);
+        persist(uuid, settings);
+    }
+
+    private static synchronized void persist(UUID uuid, SelectedSettings s) {
+        java.util.Properties props = new java.util.Properties();
+        if (java.nio.file.Files.exists(PREFS_FILE)) {
+            try (var in = java.nio.file.Files.newInputStream(PREFS_FILE)) {
+                props.load(in);
+            } catch (Exception ignored) { /* start fresh */ }
+        }
+        props.setProperty(uuid.toString(),
+                s.difficulty().name() + ";" + dimToken(s.dimension())
+                        + ";" + s.training() + ";" + s.sound().name());
+        try {
+            java.nio.file.Files.createDirectories(PREFS_FILE.getParent());
+            try (var out = java.nio.file.Files.newOutputStream(PREFS_FILE)) {
+                props.store(out, "Parkour per-player settings");
+            }
+        } catch (Exception e) {
+            ServerLogger.get().warn("[ParkourSettings] save failed: " + e.getMessage());
+        }
+    }
+
+    private static SelectedSettings loadFromFile(UUID uuid) {
+        if (!java.nio.file.Files.exists(PREFS_FILE)) return null;
+        java.util.Properties props = new java.util.Properties();
+        try (var in = java.nio.file.Files.newInputStream(PREFS_FILE)) {
+            props.load(in);
+        } catch (Exception e) {
+            return null;
+        }
+        String value = props.getProperty(uuid.toString());
+        if (value == null) return null;
+        try {
+            String[] p = value.split(";", -1);
+            return new SelectedSettings(
+                    ParkourDifficulty.valueOf(p[0]),
+                    ParkourTheme.randomTheme(),
+                    tokenToDim(p[1]),
+                    Boolean.parseBoolean(p[2]),
+                    ParkourSoundPreset.valueOf(p[3]));
+        } catch (Exception e) {
+            return null; // malformed line — fall back to defaults
+        }
+    }
+
+    private static String dimToken(RegistryKey<DimensionType> dim) {
+        if (dim == DimensionType.THE_NETHER) return "NETHER";
+        if (dim == DimensionType.OVERWORLD) return "OVERWORLD";
+        return "END";
+    }
+
+    private static RegistryKey<DimensionType> tokenToDim(String token) {
+        return switch (token) {
+            case "NETHER" -> DimensionType.THE_NETHER;
+            case "OVERWORLD" -> DimensionType.OVERWORLD;
+            default -> DimensionType.THE_END;
+        };
     }
 
     public ParkourDifficulty getDifficulty(UUID uuid)           { return getSettings(uuid).difficulty(); }
@@ -187,7 +262,7 @@ public final class ParkourSettingsMenu {
     /** Returns the cached main-menu Inventory, creating and templating it once per player. */
     private Inventory getOrCreateMainMenu(UUID uuid) {
         return mainMenus.computeIfAbsent(uuid, k -> {
-            Inventory inv = new Inventory(InventoryType.CHEST_5_ROW, Text.c("&#F1BB58&lНастройки паркура"));
+            Inventory inv = new Inventory(InventoryType.CHEST_5_ROW, Text.c("<#AE3AF3><bold>Настройки паркура"));
             inv.setTag(MENU_TAG, "1");
             for (int i = 0; i < 45; i++) inv.setItemStack(i, BG_MAIN);
             return inv;
@@ -203,14 +278,14 @@ public final class ParkourSettingsMenu {
         boolean training = isTrainingMode(uuid);
         ParkourSoundPreset sound = getSoundPreset(uuid);
 
-        inv.setItemStack(DIFF_CHILL_SLOT,   difficultyItem(ParkourDifficulty.CHILL,   Material.COOKIE,       diff));
-        inv.setItemStack(DIFF_NORMAL_SLOT,  difficultyItem(ParkourDifficulty.NORMAL,  Material.IRON_INGOT,   diff));
-        inv.setItemStack(DIFF_HARD_SLOT,    difficultyItem(ParkourDifficulty.HARD,    Material.BLAZE_POWDER, diff));
-        inv.setItemStack(DIFF_EXTREME_SLOT, difficultyItem(ParkourDifficulty.EXTREME, Material.DRAGON_BREATH, diff));
+        inv.setItemStack(DIFF_NORMAL_SLOT,       difficultyItem(ParkourDifficulty.NORMAL,      Material.IRON_INGOT,      diff));
+        inv.setItemStack(DIFF_HARD_SLOT,         difficultyItem(ParkourDifficulty.HARD,        Material.BLAZE_POWDER,    diff));
+        inv.setItemStack(DIFF_EXTREME_SLOT,      difficultyItem(ParkourDifficulty.EXTREME,     Material.DRAGON_BREATH,   diff));
+        inv.setItemStack(DIFF_COMPETITIVE_SLOT,  difficultyItem(ParkourDifficulty.COMPETITIVE, Material.NETHER_STAR,     diff));
 
-        inv.setItemStack(DIM_OVERWORLD_SLOT, dimensionItem(Material.GRASS_BLOCK,  "Обычный мир",  "Дневное небо с облаками",    TextColor.color(0x8FAE8B), dim == DimensionType.OVERWORLD));
-        inv.setItemStack(DIM_NETHER_SLOT,    dimensionItem(Material.NETHERRACK,   "Нижний мир",   "Тёмно-красное небо Незера",  TextColor.color(0xC86E6E), dim == DimensionType.THE_NETHER));
-        inv.setItemStack(DIM_END_SLOT,       dimensionItem(Material.END_STONE,    "Край",         "Тёмное звёздное небо Энда",  TextColor.color(0xB48EDC), dim == DimensionType.THE_END));
+        inv.setItemStack(DIM_OVERWORLD_SLOT, dimensionItem(Material.GRASS_BLOCK, "Обычный мир", "Дневное небо с облаками",   TextColor.color(0x8FAE8B), dim == DimensionType.OVERWORLD));
+        inv.setItemStack(DIM_NETHER_SLOT,    dimensionItem(Material.NETHERRACK,  "Нижний мир",  "Тёмно-красное небо Незера", TextColor.color(0xC86E6E), dim == DimensionType.THE_NETHER));
+        inv.setItemStack(DIM_END_SLOT,       dimensionItem(Material.END_STONE,   "Край",        "Тёмное звёздное небо Энда", TextColor.color(0xB48EDC), dim == DimensionType.THE_END));
 
         inv.setItemStack(THEME_BUTTON_SLOT, themeButton(theme));
         inv.setItemStack(SOUND_SLOT,        soundItem(sound));
@@ -225,7 +300,7 @@ public final class ParkourSettingsMenu {
     /** Returns the cached theme sub-menu Inventory, creating and templating it once per player. */
     private Inventory getOrCreateThemeMenu(UUID uuid) {
         return themeMenus.computeIfAbsent(uuid, k -> {
-            Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Text.c("&#F1BB58&lВыбор темы блоков"));
+            Inventory inv = new Inventory(InventoryType.CHEST_3_ROW, Text.c("<#AE3AF3><bold>Выбор темы блоков"));
             inv.setTag(THEME_MENU_TAG, "1");
             for (int i = 0; i < 27; i++) inv.setItemStack(i, BG_MAIN);
             return inv;
@@ -259,14 +334,14 @@ public final class ParkourSettingsMenu {
 
         ParkourDifficulty clickedDiff = difficultyForSlot(slot);
         if (clickedDiff != null) {
-            selections.put(uuid, getSettings(uuid).withDifficulty(clickedDiff));
+            putSettings(uuid, getSettings(uuid).withDifficulty(clickedDiff));
             fillMainMenuSlots(player, inv);
             return;
         }
 
         RegistryKey<DimensionType> clickedDim = dimensionForSlot(slot);
         if (clickedDim != null) {
-            selections.put(uuid, getSettings(uuid).withDimension(clickedDim));
+            putSettings(uuid, getSettings(uuid).withDimension(clickedDim));
             fillMainMenuSlots(player, inv);
             return;
         }
@@ -279,13 +354,13 @@ public final class ParkourSettingsMenu {
         }
 
         if (slot == SOUND_SLOT) {
-            selections.put(uuid, getSettings(uuid).withSound(getSoundPreset(uuid).next()));
+            putSettings(uuid, getSettings(uuid).withSound(getSoundPreset(uuid).next()));
             fillMainMenuSlots(player, inv);
             return;
         }
 
         if (slot == TRAINING_SLOT) {
-            selections.put(uuid, getSettings(uuid).withTraining(!isTrainingMode(uuid)));
+            putSettings(uuid, getSettings(uuid).withTraining(!isTrainingMode(uuid)));
             fillMainMenuSlots(player, inv);
             return;
         }
@@ -321,7 +396,7 @@ public final class ParkourSettingsMenu {
 
         ParkourTheme[] themes = ParkourTheme.values();
         if (slot >= 0 && slot < themes.length) {
-            selections.put(uuid, getSettings(uuid).withTheme(themes[slot]));
+            putSettings(uuid, getSettings(uuid).withTheme(themes[slot]));
             // Update theme menu in-place (highlight changes) then switch back to main menu
             Inventory mainInv = getOrCreateMainMenu(uuid);
             fillMainMenuSlots(player, mainInv);
@@ -334,7 +409,7 @@ public final class ParkourSettingsMenu {
     private void syncFromSession(Player player) {
         ParkourSession session = parkourService.getSession(player);
         if (session == null) return;
-        selections.put(player.getUuid(), new SelectedSettings(
+        putSettings(player.getUuid(), new SelectedSettings(
                 session.getDifficulty(), session.getTheme(), session.getCurrentDimension(),
                 session.isTrainingMode(), session.getSoundPreset()));
     }
@@ -366,6 +441,14 @@ public final class ParkourSettingsMenu {
 
         boolean needsRestart = diffChanged || trainingChanged;
 
+        if (diffChanged) {
+            String oldMode = session.getDifficulty().displayName();
+            String newMode = newDiff.displayName();
+            ServerLogger.get().playerModeChange(player.getUsername(), oldMode, newMode);
+        } else if (session == null) {
+            ServerLogger.get().playerMode(player.getUsername(), newDiff.displayName());
+        }
+
         if (needsRestart) {
             parkourService.restart(player, newDiff, newTheme, newDim, newTraining, newSound);
             player.sendMessage(ParkourService.PARKOUR_TEXT.append(
@@ -387,10 +470,10 @@ public final class ParkourSettingsMenu {
 
     private static ParkourDifficulty difficultyForSlot(int slot) {
         return switch (slot) {
-            case DIFF_CHILL_SLOT   -> ParkourDifficulty.CHILL;
-            case DIFF_NORMAL_SLOT  -> ParkourDifficulty.NORMAL;
-            case DIFF_HARD_SLOT    -> ParkourDifficulty.HARD;
-            case DIFF_EXTREME_SLOT -> ParkourDifficulty.EXTREME;
+            case DIFF_NORMAL_SLOT       -> ParkourDifficulty.NORMAL;
+            case DIFF_HARD_SLOT         -> ParkourDifficulty.HARD;
+            case DIFF_EXTREME_SLOT      -> ParkourDifficulty.EXTREME;
+            case DIFF_COMPETITIVE_SLOT  -> ParkourDifficulty.COMPETITIVE;
             default -> null;
         };
     }
@@ -412,9 +495,12 @@ public final class ParkourSettingsMenu {
                 .decoration(TextDecoration.BOLD, true)
                 .decoration(TextDecoration.ITALIC, false);
 
+        TextColor statsColor = diff.countsForStats() ? TextColor.color(0x55E068) : TextColor.color(0xB0A89E);
+
         List<Component> lore = new ArrayList<>();
         lore.add(Component.empty());
         lore.add(loreText(diff.description()));
+        lore.add(Component.text(diff.statsNote(), statsColor).decoration(TextDecoration.ITALIC, false));
         if (selected) {
             lore.add(Component.empty());
             lore.add(selectedLabel());
@@ -563,7 +649,72 @@ public final class ParkourSettingsMenu {
                 .hideExtraTooltip().build();
     }
 
+    private ItemStack applyItem(ParkourSession session, UUID uuid) {
+        if (session == null) return APPLY_NEW;
+
+        boolean diffChanged     = getDifficulty(uuid)   != session.getDifficulty();
+        boolean themeChanged    = getTheme(uuid)        != session.getTheme();
+        boolean dimChanged      = getDimension(uuid)    != session.getCurrentDimension();
+        boolean trainingChanged = isTrainingMode(uuid)  != session.isTrainingMode();
+        boolean soundChanged    = getSoundPreset(uuid)  != session.getSoundPreset();
+
+        if (!diffChanged && !themeChanged && !dimChanged && !trainingChanged && !soundChanged) return APPLY_SAME;
+        if (diffChanged || trainingChanged) return APPLY_RESTART;
+        return APPLY_CHANGE;
+    }
+
+    private static ItemStack applyButton(String title, TextColor color, String desc, Material material) {
+        Component name = Component.text(title, color)
+                .decoration(TextDecoration.BOLD, true)
+                .decoration(TextDecoration.ITALIC, false);
+
+        List<Component> lore = List.of(
+                Component.empty(),
+                loreText(desc)
+        );
+
+        return ItemStack.builder(material)
+                .set(DataComponents.CUSTOM_NAME, name)
+                .set(DataComponents.LORE, lore)
+                .hideExtraTooltip().build();
+    }
+
+    private static Component loreText(String text) {
+        return Component.text(text, LORE_WHITE).decoration(TextDecoration.ITALIC, false);
+    }
+
+    private static Component hintText(String text) {
+        return Component.text(text, HINT_COLOR).decoration(TextDecoration.ITALIC, false);
+    }
+
+    private static final Component SELECTED_LABEL =
+            Component.text("✔ Выбрано", GREEN).decoration(TextDecoration.ITALIC, false);
+
+    private static Component selectedLabel() {
+        return SELECTED_LABEL;
+    }
+
+    // ── Pre-built apply variants ─────────────────────────────────────────────
+
+    private static final ItemStack APPLY_NEW     = applyButton("▶ Применить",           GREEN,                        "Начнёт новый забег.",                  Material.EMERALD);
+    private static final ItemStack APPLY_SAME    = applyButton("— Без изменений",        TextColor.color(0xB0A89E),    "Настройки совпадают.",                 Material.GRAY_DYE);
+    private static final ItemStack APPLY_RESTART = applyButton("⟳ Перезапустить забег", ACCENT,                       "Сменит настройки и начнёт заново.",    Material.FIRE_CHARGE);
+    private static final ItemStack APPLY_CHANGE  = applyButton("✔ Применить",            GREEN,                        "Изменения без перезапуска.",           Material.EMERALD);
+
+    // ── Pre-built static sub-menu items ─────────────────────────────────────
+
+    private static final ItemStack MUSIC_SELECT_ITEM_STATIC = buildMusicSelectItem();
+    private static final ItemStack BACK_BUTTON_ITEM = buildBackButton();
+
     private static ItemStack musicSelectItem() {
+        return MUSIC_SELECT_ITEM_STATIC;
+    }
+
+    private static ItemStack backButton() {
+        return BACK_BUTTON_ITEM;
+    }
+
+    private static ItemStack buildMusicSelectItem() {
         Component name = Component.text("Выбрать трек ", ACCENT)
                 .append(Component.text("▸", NamedTextColor.GRAY))
                 .decoration(TextDecoration.BOLD, true)
@@ -583,46 +734,8 @@ public final class ParkourSettingsMenu {
                 .hideExtraTooltip().build();
     }
 
-    private ItemStack applyItem(ParkourSession session, UUID uuid) {
-        if (session == null) {
-            return applyButton("▶ Применить", GREEN, "Начнёт новый забег.", Material.EMERALD);
-        }
-
-        boolean diffChanged     = getDifficulty(uuid)   != session.getDifficulty();
-        boolean themeChanged    = getTheme(uuid)        != session.getTheme();
-        boolean dimChanged      = getDimension(uuid)    != session.getCurrentDimension();
-        boolean trainingChanged = isTrainingMode(uuid)  != session.isTrainingMode();
-        boolean soundChanged    = getSoundPreset(uuid)  != session.getSoundPreset();
-
-        if (!diffChanged && !themeChanged && !dimChanged && !trainingChanged && !soundChanged) {
-            return applyButton("— Без изменений", TextColor.color(0xB0A89E), "Настройки совпадают.", Material.GRAY_DYE);
-        }
-
-        if (diffChanged || trainingChanged) {
-            return applyButton("⟳ Перезапустить забег", ACCENT, "Сменит настройки и начнёт заново.", Material.FIRE_CHARGE);
-        }
-
-        return applyButton("✔ Применить", GREEN, "Изменения без перезапуска.", Material.EMERALD);
-    }
-
-    private static ItemStack applyButton(String title, TextColor color, String desc, Material material) {
-        Component name = Component.text(title, color)
-                .decoration(TextDecoration.BOLD, true)
-                .decoration(TextDecoration.ITALIC, false);
-
-        List<Component> lore = List.of(
-                Component.empty(),
-                loreText(desc)
-        );
-
-        return ItemStack.builder(material)
-                .set(DataComponents.CUSTOM_NAME, name)
-                .set(DataComponents.LORE, lore)
-                .hideExtraTooltip().build();
-    }
-
-    private static ItemStack backButton() {
-        Component name = Component.text("◂ Назад", NamedTextColor.WHITE)
+    private static ItemStack buildBackButton() {
+        Component name = Component.text("◂ Назад", ua.vsevolod.lobby.config.LobbyConfig.Project.WHITE_COLOR_TEXT_ORIGINAL)
                 .decoration(TextDecoration.BOLD, true)
                 .decoration(TextDecoration.ITALIC, false);
 
@@ -631,21 +744,15 @@ public final class ParkourSettingsMenu {
                 .hideExtraTooltip().build();
     }
 
-    private static Component loreText(String text) {
-        return Component.text(text, LORE_WHITE).decoration(TextDecoration.ITALIC, false);
-    }
-
-    private static Component hintText(String text) {
-        return Component.text(text, HINT_COLOR).decoration(TextDecoration.ITALIC, false);
-    }
-
-    private static Component selectedLabel() {
-        return Component.text("✔ Выбрано", GREEN).decoration(TextDecoration.ITALIC, false);
-    }
-
     // ── Hotbar items ────────────────────────────────────────────────────────
 
-    static ItemStack createLeaveItem() {
+    static final ItemStack LEAVE_ITEM = buildLeaveItem();
+    static final ItemStack SETTINGS_ITEM = buildSettingsItem();
+
+    static ItemStack createLeaveItem() { return LEAVE_ITEM; }
+    static ItemStack createItem()      { return SETTINGS_ITEM; }
+
+    private static ItemStack buildLeaveItem() {
         Component name = Component.text("Покинуть паркур", RED)
                 .decoration(TextDecoration.BOLD, true)
                 .decoration(TextDecoration.ITALIC, false);
@@ -662,9 +769,9 @@ public final class ParkourSettingsMenu {
                 .hideExtraTooltip().build();
     }
 
-    static ItemStack createItem() {
+    private static ItemStack buildSettingsItem() {
         Component name = Component.text()
-                .append(Text.c("&#F1BB58&lН&#F1B858&lа&#F1B558&lс&#F1B258&lт&#F1AF58&lр&#F1AC58&lо&#F1A958&lй&#F1A658&lк&#F1A358&lи"))
+                .append(Text.c("<gradient:#AE3AF3:#985DBC><bold>Настройки</bold></gradient>"))
                 .append(Component.text(" [", NamedTextColor.DARK_GRAY))
                 .append(Component.text("ПКМ", TextColor.color(0x8EB126)))
                 .append(Component.text("]", NamedTextColor.DARK_GRAY))

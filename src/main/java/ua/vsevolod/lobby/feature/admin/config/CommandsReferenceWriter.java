@@ -1,5 +1,7 @@
 package ua.vsevolod.lobby.feature.admin.config;
 
+import ua.vsevolod.lobby.config.ConfigReload;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -263,19 +265,19 @@ public final class CommandsReferenceWriter {
 
                 /npc setname <id> <текст | none>
                   Устанавливает имя над головой NPC.
-                  Поддерживает &-коды и &#RRGGBB HEX-цвета.
+                  Поддерживает MiniMessage: теги <gold>, <bold>, <#RRGGBB>.
                   Для удаления имени — передать "none".
                   Примеры:
-                    /npc setname selector &6Выбор режима
-                    /npc setname selector &#FFD700&lВыбор&r режима
+                    /npc setname selector <gold>Выбор режима
+                    /npc setname selector <#AE3AF3><bold>Выбор</bold> режима
                     /npc setname selector none
 
                 /npc setdesc <id> <текст | none>
                   Устанавливает описание под именем NPC.
-                  Поддерживает &-коды и HEX-цвета.
+                  Поддерживает MiniMessage (теги <gray>, <#RRGGBB> и т.д.).
                   Для удаления — передать "none".
                   Примеры:
-                    /npc setdesc selector &7Нажми, чтобы выбрать режим
+                    /npc setdesc selector <gray>Нажми, чтобы выбрать режим
                     /npc setdesc selector none
 
                 /npc setskin <id> <ник | url:https://... | none>
@@ -327,7 +329,7 @@ public final class CommandsReferenceWriter {
                     /npc setaction selector right [menu] mode-selector
                     /npc setaction selector left [menu] mode-selector
                     /npc setaction selector right [connect] adventur
-                    /npc setaction selector right [message] &aПривет!
+                    /npc setaction selector right [message] <green>Привет!
                     /npc setaction selector right none
 
             ──────────────────────────────────────────────────────
@@ -475,20 +477,20 @@ public final class CommandsReferenceWriter {
             [message] <текст>
             ──────────────────────────────────────────────────────
               Отправляет игроку сообщение в чат.
-              Поддерживает &-коды и &#RRGGBB HEX-цвета.
+              Поддерживает MiniMessage (<green>, <#RRGGBB>, <bold> и т.д.).
 
               Примеры:
-                [message] &aДобро пожаловать!
-                [message] &#FFD700&lВы выбрали режим Adventure!
+                [message] <green>Добро пожаловать!
+                [message] <#AE3AF3><bold>Вы выбрали режим Adventure!
 
             ──────────────────────────────────────────────────────
             [broadcast] <текст>
             ──────────────────────────────────────────────────────
               Отправляет сообщение ВСЕМ онлайн-игрокам.
-              Поддерживает &-коды и &#RRGGBB HEX-цвета.
+              Поддерживает MiniMessage (<red>, <#RRGGBB>, <bold> и т.д.).
 
               Примеры:
-                [broadcast] &cСервер перезапустится через 5 минут!
+                [broadcast] <red>Сервер перезапустится через 5 минут!
 
             ──────────────────────────────────────────────────────
             [close]
@@ -511,29 +513,29 @@ public final class CommandsReferenceWriter {
                 gamemode creative → выполнить /gamemode creative
 
             ═══════════════════════════════════════════════════════
-             ЦВЕТОВЫЕ КОДЫ
+             ФОРМАТ ТЕКСТА — MiniMessage
             ═══════════════════════════════════════════════════════
 
-              В именах, описаниях NPC, названиях предметов, menus.yml, holograms.yml
-              поддерживаются два формата цветов:
+              В именах, описаниях NPC, названиях предметов, menus.yml, holograms.yml,
+              servers.yml и сообщениях используется формат MiniMessage.
 
-              Коды &:
-                &0 — чёрный        &1 — тёмно-синий    &2 — тёмно-зелёный
-                &3 — тёмно-голубой  &4 — тёмно-красный  &5 — тёмно-фиолетовый
-                &6 — золотой        &7 — серый           &8 — тёмно-серый
-                &9 — синий          &a — зелёный         &b — голубой
-                &c — красный        &d — светло-фиолетовый &e — жёлтый
-                &f — белый
-
-              Форматирование &:
-                &l — жирный   &o — курсив   &n — подчёркнутый
-                &m — перечёркнутый   &k — магический текст   &r — сброс
+              Именованные цвета (теги):
+                <black> <dark_blue> <dark_green> <dark_aqua>
+                <dark_red> <dark_purple> <gold> <gray> <dark_gray>
+                <blue> <green> <aqua> <red> <light_purple> <yellow> <white>
 
               HEX-цвета (произвольный RGB):
-                &#RRGGBB  — любой цвет в формате HEX.
-                Пример: &#FF5500 — оранжевый, &#55FF55 — зелёный.
-                Можно комбинировать с &l, &o и другими стилями:
-                &#F1BB58&lЖирный золотой текст
+                <#RRGGBB> — любой цвет. Пример: <#FF5500>оранжевый текст
+
+              Форматирование:
+                <bold> <italic> <underlined> <strikethrough> <obfuscated> <reset>
+
+              Градиент и радуга:
+                <gradient:#AE3AF3:#FFF2E0>плавный переход</gradient>
+                <rainbow>радужный текст</rainbow>
+
+              Теги комбинируются:
+                <#AE3AF3><bold>Жирный золотой текст
 
             ═══════════════════════════════════════════════════════
              ПРИМЕРЫ ТИПИЧНЫХ ЗАДАЧ
@@ -544,9 +546,9 @@ public final class CommandsReferenceWriter {
                    survival:
                      material: iron_sword
                      slot: 20
-                     display_name: "&#55FF55&lSurvival"
+                     display_name: "<#55FF55><bold>Survival"
                      lore:
-                       - "&7Нажмите, чтобы войти"
+                       - "<gray>Нажмите, чтобы войти"
                      left_click_commands:
                        - "[connect] survival"
                      right_click_commands:
@@ -556,7 +558,7 @@ public final class CommandsReferenceWriter {
                  a) Встать на нужную позицию
                  b) /npc add selector
                  c) /npc setskin selector Dream
-                 d) /npc setname selector &6&lВыбор режима
+                 d) /npc setname selector <gold><bold>Выбор режима
                  e) /npc setaction selector right [menu] mode-selector
                  f) /npc setaction selector left [menu] mode-selector
 
@@ -585,9 +587,9 @@ public final class CommandsReferenceWriter {
      * Перезаписывается при каждом запуске — всегда актуален.
      */
     public static void write() {
-        Path file = ConfigManager.CONFIG_DIR.resolve("commands.txt");
+        Path file = ConfigReload.CONFIG_DIR.resolve("commands.txt");
         try {
-            Files.createDirectories(ConfigManager.CONFIG_DIR);
+            Files.createDirectories(ConfigReload.CONFIG_DIR);
             Files.writeString(file, CONTENT, StandardCharsets.UTF_8);
         } catch (IOException e) {
             System.err.println("[CommandsReference] Не удалось записать commands.txt: " + e.getMessage());
